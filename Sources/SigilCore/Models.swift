@@ -21,9 +21,37 @@ public enum KeyStoreKind: String, Codable, Sendable, CaseIterable, Identifiable 
     case keychain
     /// Key generated inside 1Password; never on disk. ssh uses it through the 1Password SSH agent (Touch ID).
     case onePassword
+    /// Non-exportable key in the Mac's Secure Enclave (macOS 26+); every use needs Touch ID.
+    case secureEnclave
 
     public var id: String { rawValue }
-    public var title: String { self == .keychain ? "macOS Keychain" : "1Password" }
+    public var title: String {
+        switch self {
+        case .keychain: return "macOS Keychain"
+        case .onePassword: return "1Password"
+        case .secureEnclave: return "Secure Enclave"
+        }
+    }
+
+    /// Using the key pops an approval prompt, so Sigil never uses it unattended.
+    public var asksForApproval: Bool { self != .keychain }
+
+    /// The stores this Mac can use, most protective first.
+    public static var available: [KeyStoreKind] {
+        (SecureEnclaveService.isSupported ? [.secureEnclave] : []) + [.onePassword, .keychain]
+    }
+
+    /// Default for new servers: Secure Enclave where the Mac supports it, otherwise 1Password.
+    public static var preferredDefault: KeyStoreKind { SecureEnclaveService.isSupported ? .secureEnclave : .onePassword }
+
+    /// The user's preferred store, or the closest one that works right now.
+    public static func usable(_ preferred: KeyStoreKind, onePasswordReady: Bool) -> KeyStoreKind {
+        switch preferred {
+        case .secureEnclave where !SecureEnclaveService.isSupported: return onePasswordReady ? .onePassword : .keychain
+        case .onePassword where !onePasswordReady: return SecureEnclaveService.isSupported ? .secureEnclave : .keychain
+        default: return preferred
+        }
+    }
 }
 
 /// A key in the server's authorized_keys that Sigil did not put there.
@@ -91,6 +119,8 @@ public struct Server: Codable, Identifiable, Hashable, Sendable {
     public var keyStore: KeyStoreKind?
     public var onePasswordItemID: String?
     public var onePasswordVaultID: String?
+    /// Public-key hash (hex) of the Secure Enclave identity, for deleting it.
+    public var secureEnclaveKeyHash: String?
 
     public var store: KeyStoreKind { keyStore ?? .keychain }
 
@@ -146,9 +176,15 @@ public struct Server: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var nextRotation: Date? {
-        guard rotationIntervalDays > 0 else { return nil }
-        return Calendar.current.date(byAdding: .day, value: rotationIntervalDays, to: lastRotatedAt)
+        var days = rotationIntervalDays
+        // Secure Enclave identities come with a one-year certificate and ssh-keychain.dylib only offers valid ones:
+        // renew well before it lapses, even when rotation is switched off.
+        if store == .secureEnclave { days = min(days > 0 ? days : Self.secureEnclaveMaxDays, Self.secureEnclaveMaxDays) }
+        guard days > 0 else { return nil }
+        return Calendar.current.date(byAdding: .day, value: days, to: lastRotatedAt)
     }
+
+    static let secureEnclaveMaxDays = 330
 
     /// Due, and not retried too soon after a failure.
     public func isRotationDue(now: Date = Date(), retryAfter: TimeInterval = 6 * 3600) -> Bool {

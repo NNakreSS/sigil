@@ -21,6 +21,8 @@ public enum RemoteAuth: Sendable {
     case key(fileName: String)
     /// Key held by an SSH agent (1Password), pinned by its public key file so only that key is offered.
     case agent(publicKeyFile: String, socket: String)
+    /// Secure Enclave key: the handle file in ~/.ssh/sigil/keys, signed by Apple's provider after Touch ID.
+    case securityKey(fileName: String)
     /// The user's own existing setup (`ssh -F <their config> <alias>`), used once to migrate a server they already
     /// reach with their own key. Never prompts (BatchMode).
     case userConfig(alias: String, configFile: String)
@@ -210,6 +212,13 @@ public struct RemoteService: Sendable {
                 "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=\(socket)", "-o", "BatchMode=yes",
                 "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
             ]
+        case .securityKey(let fileName):
+            a += [
+                "-i", paths.keyURL(fileName).path,
+                "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+                "-o", "SecurityKeyProvider=\(SecureEnclaveService.provider)", "-o", "BatchMode=yes",
+                "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
+            ]
         case .userConfig:
             break   // handled above
         case .password:
@@ -229,8 +238,8 @@ public struct RemoteService: Sendable {
         switch auth {
         case .key, .userConfig:
             return try await Shell.run("/usr/bin/ssh", args, stdin: stdin, timeout: 45)
-        case .agent:
-            // Longer: the user may be approving the key use in 1Password.
+        case .agent, .securityKey:
+            // Longer: the user may be approving the key use (1Password, Touch ID).
             return try await Shell.run("/usr/bin/ssh", args, stdin: stdin, timeout: 120)
         case .password(let secret):
             return try await Askpass.withSecret(secret) { env in

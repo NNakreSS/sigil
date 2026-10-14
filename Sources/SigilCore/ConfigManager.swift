@@ -23,6 +23,10 @@ public struct ConfigManager: Sendable {
                 // Public key pins the 1Password key for this host; the private key stays in 1Password.
                 out += "  IdentityFile \(paths.keyURL(s.keyFileName).appendingPathExtension("pub").path)\n"
                 out += "  IdentitiesOnly yes\n  IdentityAgent \"\(onePasswordSocket)\"\n"
+            case .secureEnclave:
+                // Key handle file (no secret); Apple's provider signs inside the Secure Enclave after Touch ID.
+                out += "  IdentityFile \(paths.keyURL(s.keyFileName).path)\n"
+                out += "  IdentitiesOnly yes\n  IdentityAgent none\n  SecurityKeyProvider \(SecureEnclaveService.provider)\n"
             }
             if let j = s.jumpServerID, let jump = servers.first(where: { $0.id == j }) {
                 out += "  ProxyJump \(jump.alias)\n"

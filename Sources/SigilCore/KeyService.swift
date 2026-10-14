@@ -10,6 +10,7 @@ public struct KeyMaterial: Sendable {
     public let fingerprint: String
     public var onePasswordItemID: String? = nil
     public var onePasswordVaultID: String? = nil
+    public var secureEnclaveKeyHash: String? = nil
 }
 
 /// Creates and removes per-server ed25519 keys.

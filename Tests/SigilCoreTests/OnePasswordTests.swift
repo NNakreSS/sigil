@@ -142,7 +142,7 @@ final class OnePasswordFlowTests: XCTestCase {
         await model.refreshOnePasswordStatus()
         XCTAssertTrue(model.onePasswordStatus.isReady)
         XCTAssertEqual(model.onePasswordStatus.cliVersion, "2.41.0")
-        XCTAssertEqual(model.recommendedKeyStore, .onePassword)
+        XCTAssertEqual(model.recommendedKeyStore, SecureEnclaveService.isSupported ? .secureEnclave : .onePassword)
     }
 
     func testAddWithOnePasswordKeepsPrivateKeyOutOfDiskAndConnects() async throws {

@@ -22,6 +22,7 @@ public final class DeckModel {
     private let hostKeys: HostKeyService
     private let remote: RemoteService
     public let onePassword: OnePasswordService
+    private let secureEnclave: SecureEnclaveService
     private var scheduler: Task<Void, Never>?
     private var tunnelProcesses: [UUID: TunnelProcess] = [:]
     /// Tunnel id → server id, for every tunnel currently up.
@@ -40,6 +41,7 @@ public final class DeckModel {
         onePassword: OnePasswordService? = nil
     ) {
         self.onePassword = onePassword ?? OnePasswordService(paths: paths)
+        self.secureEnclave = SecureEnclaveService(paths: paths)
         self.paths = paths
         self.store = ServerStore(paths: paths)
         self.config = ConfigManager(paths: paths)
@@ -66,8 +68,10 @@ public final class DeckModel {
         onePasswordStatus = await onePassword.status()
     }
 
-    /// 1Password when it is fully set up, otherwise the Keychain.
-    public var recommendedKeyStore: KeyStoreKind { onePasswordStatus.isReady ? .onePassword : .keychain }
+    /// Secure Enclave where supported, else 1Password when it is fully set up, otherwise the Keychain.
+    public var recommendedKeyStore: KeyStoreKind {
+        KeyStoreKind.usable(.preferredDefault, onePasswordReady: onePasswordStatus.isReady)
+    }
 
     /// Checks reachability and rotates overdue keys now, then every 15 minutes while the app runs.
     public func startScheduler() {
@@ -126,7 +130,7 @@ public final class DeckModel {
         progress("SSH yapılandırması hazırlanıyor")
         try config.ensureInclude()
 
-        progress(d.keyStore == .onePassword ? "Anahtar 1Password’de oluşturuluyor" : "Bu sunucuya özel anahtar oluşturuluyor")
+        progress(Self.creatingMessage(d.keyStore))
         let material = try await generateKey(d.keyStore, fileName: keyFile, alias: d.alias)
 
         var installed = false
@@ -155,6 +159,7 @@ public final class DeckModel {
             server.jumpServerID = d.jumpServerID
             server.onePasswordItemID = material.onePasswordItemID
             server.onePasswordVaultID = material.onePasswordVaultID
+            server.secureEnclaveKeyHash = material.secureEnclaveKeyHash
             server.events.append(ServerEvent(level: .info, message: "Sunucu eklendi; ilk anahtar kuruldu."))
             let updated = servers + [server]
             try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath)
@@ -167,7 +172,7 @@ public final class DeckModel {
             if installed {
                 try? await remote.removeKey(target: target, auth: passwordAuth, blob: material.blob, allowEmpty: true)
             }
-            await deleteKey(d.keyStore, fileName: keyFile, itemID: material.onePasswordItemID, vaultID: material.onePasswordVaultID)
+            await deleteKey(d.keyStore, fileName: keyFile, material: material)
             if createdKnownHosts, !servers.contains(where: { $0.host == d.host && $0.port == d.port }) {
                 await hostKeys.forget(host: d.host, port: d.port)
             }
@@ -219,7 +224,7 @@ public final class DeckModel {
         let createdKnownHosts = try await hostKeys.trust(confirmed, host: candidate.host, port: candidate.port)
         try config.ensureInclude()
 
-        progress(keyStore == .onePassword ? "Anahtar 1Password’de oluşturuluyor" : "Bu sunucuya özel anahtar oluşturuluyor")
+        progress(Self.creatingMessage(keyStore))
         let material = try await generateKey(keyStore, fileName: keyFile, alias: candidate.alias)
 
         var installed = false
@@ -246,6 +251,7 @@ public final class DeckModel {
             server.keyStore = keyStore
             server.onePasswordItemID = material.onePasswordItemID
             server.onePasswordVaultID = material.onePasswordVaultID
+            server.secureEnclaveKeyHash = material.secureEnclaveKeyHash
             server.events.append(ServerEvent(level: .info, message: "~/.ssh/config’ten içe aktarıldı; yeni anahtar kuruldu."))
             let updated = servers + [server]
             try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath)
@@ -273,7 +279,7 @@ public final class DeckModel {
             if installed {
                 try? await remote.removeKey(target: target, auth: oldAuth, blob: material.blob)
             }
-            await deleteKey(keyStore, fileName: keyFile, itemID: material.onePasswordItemID, vaultID: material.onePasswordVaultID)
+            await deleteKey(keyStore, fileName: keyFile, material: material)
             if createdKnownHosts, !servers.contains(where: { $0.host == candidate.host && $0.port == candidate.port }) {
                 await hostKeys.forget(host: candidate.host, port: candidate.port)
             }
@@ -293,24 +299,38 @@ public final class DeckModel {
 
     // MARK: Rotation
 
-    /// Keychain keys rotate silently. 1Password keys need the user to approve each new key in 1Password, so
-    /// rotating them unattended would pop Touch ID prompts out of nowhere: for those the user is notified instead
-    /// (once per due period) and rotates with one click.
+    /// Keychain keys rotate silently. Keys that need approval (1Password, Secure Enclave) would pop prompts out of
+    /// nowhere, so those wait for the user. 1Password servers get a notification (once per due period); Secure Enclave
+    /// servers are never handled in the background at all and only show as due in the app.
     public func rotateDueServers() async {
         for s in servers where s.isRotationDue() {
-            switch s.store {
-            case .keychain:
+            if runsUnattended(s) {
                 await rotate(s.id, automatic: true)
-            case .onePassword:
-                guard !notifiedDue.contains(s.id) else { continue }
-                notifiedDue.insert(s.id)
-                notify?("\(s.alias): anahtar yenileme zamanı", "1Password onayı gerektiği için seni bekliyor. Sigil’te “Anahtarı Şimdi Yenile”ye bas.")
+                continue
             }
+            guard !backgroundOff(s), !notifiedDue.contains(s.id) else { continue }
+            notifiedDue.insert(s.id)
+            notify?("\(s.alias): anahtar yenileme zamanı", "Onay gerektiği için seni bekliyor. Sigil’te “Anahtarı Şimdi Yenile”ye bas.")
         }
     }
 
-    /// 1Password servers whose rotation is due and waiting for the user.
-    public var awaitingManualRotation: [Server] { servers.filter { $0.store == .onePassword && $0.isRotationDue(retryAfter: 0) } }
+    /// Servers whose rotation is due and waiting for the user's approval.
+    public var awaitingManualRotation: [Server] { servers.filter { !runsUnattended($0) && $0.isRotationDue(retryAfter: 0) } }
+
+    /// Using this server's key, and its jump host's, never asks the user for anything: Sigil may do it unattended.
+    public func runsUnattended(_ s: Server) -> Bool {
+        guard !s.store.asksForApproval else { return false }
+        guard let j = s.jumpServerID, let jump = server(j) else { return true }
+        return !jump.store.asksForApproval
+    }
+
+    /// Secure Enclave servers (and servers reached through one) are never contacted in the background, not even to
+    /// check that they are up: only when the user asks.
+    public func backgroundOff(_ s: Server) -> Bool {
+        if s.store == .secureEnclave { return true }
+        guard let j = s.jumpServerID, let jump = server(j) else { return false }
+        return jump.store == .secureEnclave
+    }
     private var notifiedDue: Set<UUID> = []
 
     /// Replaces the server's key without ever being locked out:
@@ -346,6 +366,7 @@ public final class DeckModel {
                 $0.keyFingerprint = m.fingerprint
                 $0.onePasswordItemID = m.onePasswordItemID
                 $0.onePasswordVaultID = m.onePasswordVaultID
+                $0.secureEnclaveKeyHash = m.secureEnclaveKeyHash
                 $0.lastRotatedAt = Date()
                 $0.lastRotationFailureAt = nil
                 $0.lastReachable = true
@@ -367,7 +388,7 @@ public final class DeckModel {
                 warning = error.localizedDescription
                 update(id) { $0.pendingKeyRemovals.append(old.publicKeyBlob) }
             }
-            await deleteKey(old.store, fileName: old.keyFileName, itemID: old.onePasswordItemID, vaultID: old.onePasswordVaultID)
+            await deleteKey(of: old)
             notifiedDue.remove(id)
 
             if let warning {
@@ -380,7 +401,7 @@ public final class DeckModel {
             // The old key is still the active one. Clean up whatever we created for the new key.
             if let m = material {
                 try? await remote.removeKey(target: target, auth: auth(old.store, old.keyFileName), blob: m.blob)
-                await deleteKey(old.store, fileName: newFile, itemID: m.onePasswordItemID, vaultID: m.onePasswordVaultID)
+                await deleteKey(old.store, fileName: newFile, material: m)
             }
             update(id) { $0.lastRotationFailureAt = Date() }
             log(id, .error, "\(origin) anahtar yenileme başarısız (eski anahtar geçerli): \(error.localizedDescription)")
@@ -425,15 +446,16 @@ public final class DeckModel {
 
     // MARK: Status & history
 
-    /// - Parameter interactive: the user asked for it. For 1Password servers only an interactive check logs in with the
-    ///   key (approval prompt); background checks just confirm the SSH server answers.
+    /// - Parameter interactive: the user asked for it. For keys that need approval only an interactive check logs in
+    ///   (approval prompt); background checks just confirm the SSH server answers, and skip Secure Enclave servers.
     public func checkStatus(_ id: UUID, interactive: Bool = false) async {
         guard let s = server(id), busy[id] == nil else { return }
+        if !interactive && backgroundOff(s) { return }
         busy[id] = "Bağlantı denetleniyor"
         defer { busy[id] = nil }
 
         let target = self.target(for: s)
-        let useKey = s.store == .keychain || interactive
+        let useKey = interactive || runsUnattended(s)
 
         // Host key watch: does the server still present the key we trusted?
         let scanned = try? await scanKeys(host: s.host, port: s.port, jumpID: s.jumpServerID)
@@ -502,7 +524,7 @@ public final class DeckModel {
     @discardableResult
     public func audit(_ id: UUID, interactive: Bool = true) async throws -> Int {
         guard let s = server(id) else { throw DeckError.notFound }
-        if s.store == .onePassword && !interactive { return 0 }
+        if !interactive && !runsUnattended(s) { return 0 }
         guard busy[id] == nil else { throw DeckError.busy }
         busy[id] = "Mühürler denetleniyor"
         defer { busy[id] = nil }
@@ -530,9 +552,9 @@ public final class DeckModel {
         return fresh
     }
 
-    /// Background audits: keychain servers every 6 hours (1Password servers only on demand).
+    /// Background audits every 6 hours, for servers whose key needs no approval (the rest only on demand).
     public func auditDueServers() async {
-        for s in servers where s.store == .keychain && s.lastReachable != false {
+        for s in servers where runsUnattended(s) && s.lastReachable != false {
             if let last = s.lastAuditAt, Date().timeIntervalSince(last) < 6 * 3600 { continue }
             _ = try? await audit(s.id, interactive: false)
         }
@@ -587,11 +609,11 @@ public final class DeckModel {
 
     // MARK: Health
 
-    /// Collects a read-only snapshot. 1Password servers only when `interactive` (key use needs approval).
+    /// Collects a read-only snapshot. Servers whose key needs approval only when `interactive`.
     @discardableResult
     public func collectHealth(_ id: UUID, interactive: Bool = true) async throws -> ServerHealth? {
         guard let s = server(id) else { throw DeckError.notFound }
-        if s.store == .onePassword && !interactive { return nil }
+        if !interactive && !runsUnattended(s) { return nil }
         guard busy[id] == nil else { throw DeckError.busy }
         busy[id] = "Sağlık ölçülüyor"
         defer { busy[id] = nil }
@@ -613,9 +635,9 @@ public final class DeckModel {
         return h
     }
 
-    /// Background health checks: keychain servers hourly.
+    /// Background health checks, hourly, for servers whose key needs no approval.
     public func collectDueHealth() async {
-        for s in servers where s.store == .keychain && s.lastReachable == true {
+        for s in servers where runsUnattended(s) && s.lastReachable == true {
             if let last = s.health?.collectedAt, Date().timeIntervalSince(last) < 3600 { continue }
             _ = try? await collectHealth(s.id, interactive: false)
         }
@@ -835,7 +857,7 @@ public final class DeckModel {
         try config.writeIncludeFile(remaining, onePasswordSocket: onePassword.socketPath)
         servers = remaining
         persist()
-        await deleteKey(s.store, fileName: s.keyFileName, itemID: s.onePasswordItemID, vaultID: s.onePasswordVaultID)
+        await deleteKey(of: s)
         if s.createdKnownHostsEntry == true, !remaining.contains(where: { $0.host == s.host && $0.port == s.port }) {
             await hostKeys.forget(host: s.host, port: s.port)
         }
@@ -891,24 +913,47 @@ public final class DeckModel {
         switch store {
         case .keychain: return try await keys.generate(fileName: fileName, comment: "sigil:\(alias)")
         case .onePassword: return try await onePassword.generate(fileName: fileName, alias: alias)
+        case .secureEnclave: return try await secureEnclave.generate(fileName: fileName, alias: alias)
+        }
+    }
+
+    static func creatingMessage(_ store: KeyStoreKind) -> String {
+        switch store {
+        case .keychain: return "Bu sunucuya özel anahtar oluşturuluyor"
+        case .onePassword: return "Anahtar 1Password’de oluşturuluyor"
+        case .secureEnclave: return "Anahtar Secure Enclave’de oluşturuluyor"
         }
     }
 
     /// Keychain: key files + Keychain passphrase removed. 1Password: item moved to Archive (recoverable).
-    private func deleteKey(_ store: KeyStoreKind, fileName: String, itemID: String?, vaultID: String?) async {
+    /// Secure Enclave: identity deleted, handle files removed.
+    private func deleteKey(_ store: KeyStoreKind, fileName: String, itemID: String?, vaultID: String?, secureEnclaveHash: String?) async {
         switch store {
         case .keychain:
             await keys.delete(fileName: fileName)
         case .onePassword:
             if let itemID { await onePassword.archive(itemID: itemID, vaultID: vaultID) }
             onePassword.deletePublicKey(fileName: fileName)
+        case .secureEnclave:
+            await secureEnclave.delete(fileName: fileName, keyHash: secureEnclaveHash)
         }
+    }
+
+    private func deleteKey(_ store: KeyStoreKind, fileName: String, material m: KeyMaterial) async {
+        await deleteKey(store, fileName: fileName, itemID: m.onePasswordItemID, vaultID: m.onePasswordVaultID,
+                        secureEnclaveHash: m.secureEnclaveKeyHash)
+    }
+
+    private func deleteKey(of s: Server) async {
+        await deleteKey(s.store, fileName: s.keyFileName, itemID: s.onePasswordItemID, vaultID: s.onePasswordVaultID,
+                        secureEnclaveHash: s.secureEnclaveKeyHash)
     }
 
     private func auth(_ store: KeyStoreKind, _ fileName: String) -> RemoteAuth {
         switch store {
         case .keychain: return .key(fileName: fileName)
         case .onePassword: return .agent(publicKeyFile: fileName, socket: onePassword.socketPath)
+        case .secureEnclave: return .securityKey(fileName: fileName)
         }
     }
 
