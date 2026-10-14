@@ -22,7 +22,7 @@ SSH sunucularını tek yerden yöneten, anahtarları senin yerine üreten, kuran
 Sunucuyu bir kez eklersin: alias, IP, kullanıcı adı ve şifre. Sigil gerisini halleder:
 
 1. Sunucunun parmak izini gösterir, sen onaylarsın.
-2. O sunucuya **özel** bir anahtar üretir (1Password'de ya da macOS Keychain'de).
+2. O sunucuya **özel** bir anahtar üretir: Mac'in güvenlik çipinde (Secure Enclave), 1Password'de ya da macOS Keychain'de.
 3. Açık anahtarı sunucuya kurar ve yeni anahtarla girişi doğrular. Şifre bu adımdan sonra bir daha kullanılmaz ve hiçbir yere kaydedilmez.
 4. `~/.ssh/config` dosyasına kısayolu yazar ve anahtarı düzenli olarak yeniler.
 
@@ -35,7 +35,7 @@ ssh webserver
 ## Güvenlik, sade bir dille
 
 <p align="center">
-  <img src="docs/how-it-works.svg" width="100%" alt="Sigil'in güvenlik modeli: private key ve diğer 1Password kayıtları Mac'te kalır; sunucuya yalnızca açık anahtar ve her girişte bir imza gider.">
+  <img src="docs/how-it-works.svg" width="100%" alt="Sunucuna kilit gider, anahtar sende kalır: gizli anahtar Mac'teki kasada (Secure Enclave, 1Password ya da Keychain) doğar ve hiç dışarı çıkmaz; sunucuya yalnızca açık anahtar takılır, girişte yalnızca Touch ID ile atılan imza gider.">
 </p>
 
 Bir SSH aracına sunucu şifreni ve 1Password'ünü emanet etmeden önce aklına gelen soruların cevapları aşağıda. Her cevap kodda doğrulanabilir.
@@ -64,10 +64,26 @@ Hayır. Sigil 1Password'le yalnızca resmi `op` komut satırı aracıyla konuşu
 <summary><b>Private key'im bir yere gider mi?</b></summary>
 <br>
 
+- **Secure Enclave seçeneğinde (varsayılan):** Anahtar Mac'in güvenlik çipinde üretilir ve **hiçbir şekilde** dışarı çıkarılamaz: ne Sigil, ne macOS, ne de Mac'e erişen biri onu kopyalayabilir. Diskte yalnızca ssh'a hangi anahtarı kullanacağını söyleyen, gizli bilgi içermeyen bir dosya durur.
 - **1Password seçeneğinde:** Anahtar 1Password'ün içinde üretilir ve hiç diske yazılmaz. `ssh` bağlanırken sunucu bir soru gönderir. 1Password SSH Agent, sen Touch ID ile onaylayınca bu soruyu imzalar. Dışarı çıkan şey anahtar değil, yalnızca o tek girişe ait imzadır.
 - **Keychain seçeneğinde:** Anahtar `~/.ssh/sigil/keys` altında, 192 bit rastgele bir parolayla şifrelenmiş olarak durur. Parola macOS Keychain'de saklanır.
 
-İki durumda da sunucuya yalnızca **açık** anahtar gider. Açık anahtar, adı üstünde, gizli değildir: onunla giriş yapılamaz.
+Her durumda sunucuya yalnızca **açık** anahtar gider. Açık anahtar, adı üstünde, gizli değildir: onunla giriş yapılamaz.
+</details>
+
+<details>
+<summary><b>Mac'im açıkken başında oturan biri sunucularıma girebilir mi?</b></summary>
+<br>
+
+Bu, anahtarın nerede durduğuna bağlı:
+
+| Anahtar deposu | Terminal'den `ssh sunucum` yazan biri |
+|---|---|
+| **Secure Enclave** | Her bağlantıda Touch ID istenir. Parmak izin olmadan giremez, Sigil'i hiç açmasa da. |
+| **1Password** | 1Password onay ister. 1Password açıksa ve o uygulamaya daha önce izin verdiysen sormadan geçebilir; 1Password'ün otomatik kilit süresini kısa tut. |
+| **Keychain** | Mac'in kilidi açıkken **sormadan girer.** Bu korumayı istiyorsan Secure Enclave'i seç. |
+
+Secure Enclave sunucularına Sigil arka planda hiç bağlanmaz: durum, sağlık ve anahtar denetimi yalnızca sen istediğinde, Touch ID ile yapılır.
 </details>
 
 <details>
@@ -122,21 +138,24 @@ Kodda bunların dışında ağ isteği yapan bir satır (`URLSession` vb.) yok. 
 <summary><b>Mac'im çalınırsa ya da bir anahtarın sızdığından şüphelenirsem?</b></summary>
 <br>
 
-- 1Password anahtarları Touch ID olmadan kullanılamaz. Keychain anahtarları da Mac'in kilidiyle korunur.
+- Secure Enclave ve 1Password anahtarları Touch ID olmadan kullanılamaz. Keychain anahtarları Mac'in kilidiyle korunur.
+- Secure Enclave anahtarı Mac'e bağlıdır, yedeklenemez. Mac kaybolursa sunucuya şifrenle girip yeni bir anahtar eklersin. Bu yüzden **Sertleştirme** sihirbazı bu sunucularda şifreli girişi varsayılan olarak açık bırakır.
 - **Acil durum** (⌥⇧⌘R) tek tıkla bütün sunucularda anahtarı yeniler. Eski anahtarlar sunuculardan silinir.
 - Yenileme hiçbir zaman seni dışarıda bırakmaz. Önce yeni anahtar kurulur, yeni anahtarla giriş doğrulanır, ancak ondan sonra eskisi kaldırılır.
 </details>
 
 **Dürüst sınırlar**
 
-- Aynı macOS kullanıcısıyla çalışan zararlı bir yazılım, Keychain seçeneğinde anahtarlara ulaşabilir. 1Password her kullanımda onay istediği için bu konuda daha güçlüdür.
+- Aynı macOS kullanıcısıyla çalışan zararlı bir yazılım, Keychain seçeneğinde anahtarlara ulaşabilir. Secure Enclave ve 1Password her kullanımda onay istediği için bu konuda daha güçlüdür.
+- Secure Enclave seçeneği macOS 26 ve Touch ID'li bir Mac gerektirir. Diğer Mac'lerde 1Password ya da Keychain kullanılır.
+- Secure Enclave anahtarını silmek Touch ID istemez. Mac'ine erişen biri anahtarı kullanamaz ama silebilir; bu durumda sunucuya şifrenle girersin.
 - İlk kurulum için sunucuda şifreyle girişin açık olması gerekir. Kurulumdan sonra **Sertleştirme** sihirbazıyla kapatabilirsin.
 
 ## Özellikler
 
 | | |
 |---|---|
-| **İki anahtar deposu** | Sunucu başına 1Password (Touch ID) ya da macOS Keychain (tam otomatik yenileme). |
+| **Üç anahtar deposu** | Sunucu başına Secure Enclave (Mac'in güvenlik çipi, her girişte Touch ID), 1Password (Touch ID) ya da macOS Keychain (tam otomatik yenileme). |
 | **Kilitlenmeyen yenileme** | Yeni anahtarla giriş doğrulanmadan eskisi silinmez. 1Password anahtarları için bildirim ve tek tıkla yenileme. |
 | **Gömülü terminal** | Sekmeli terminal, ⌘1…9 ile sunucular arasında geçiş. İstersen Terminal, iTerm2, Ghostty veya Warp. |
 | **Hızlı bağlan** | ⌘K ile ara ve bağlan. Production sunucuları kırmızıyla işaretlenir ve bağlanmadan önce onay ister. |
@@ -166,7 +185,7 @@ Tasarım dili mürekkep, parşömen ve tek bir vurgu rengine (verdigris) dayanı
 
 1. [Son sürümün](https://github.com/NNakreSS/sigil/releases/latest) `.dmg` dosyasını indir.
 2. Sigil'i **Applications** klasörüne sürükle ve aç. Yanlış yerden açarsan Sigil kendini taşımayı teklif eder.
-3. İlk açılışta kısa bir kurulum ekranı anahtar deposunu (1Password ya da Keychain) seçmene yardım eder.
+3. İlk açılışta kısa bir kurulum ekranı anahtar deposunu (Secure Enclave, 1Password ya da Keychain) seçmene yardım eder.
 
 1Password seçeneği için 1Password 8, **Ayarlar → Geliştirici** altında *SSH Agent* ve *1Password CLI ile entegrasyon* seçeneklerinin açık olması ve `op` CLI'ın kurulu olması gerekir.
 
