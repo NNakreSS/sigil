@@ -15,7 +15,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 180   # a new team's first notarizations can take Apple hours
     env:
       SIGN_IDENTITY: ${{ vars.SIGN_IDENTITY }}
       SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_KEY }}
