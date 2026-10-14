@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Metal toolchain (needed by SwiftTerm's shaders on newer Xcode)
+        run: xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+      - name: Test (unit + end-to-end against a throw-away local sshd)
+        run: swift test
+      - name: Build app bundle (ad-hoc signed)
+        run: ./scripts/make-app.sh
