@@ -16,16 +16,25 @@ BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 UNIVERSAL="${UNIVERSAL:-0}"
 
-ARCH_FLAGS=()
-if [[ "$UNIVERSAL" == "1" ]]; then ARCH_FLAGS=(--arch arm64 --arch x86_64); fi
-
-swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
-BIN_DIR="$(swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)"
-
 APP="build/Sigil.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
-cp "$BIN_DIR/Sigil" "$APP/Contents/MacOS/Sigil"
+
+if [[ "$UNIVERSAL" == "1" ]]; then
+  # One plain SwiftPM build per architecture, merged with lipo. `--arch a --arch b` would route through the Xcode
+  # build system, which fails to resolve SwiftTerm's build-info plugin on some Xcode versions.
+  # x86_64 gets its own scratch path: newer SwiftPM writes every triple to the same Products folder.
+  X86=(-c release --triple x86_64-apple-macosx14.0 --scratch-path .build/x86_64)
+  swift build -c release --triple arm64-apple-macosx14.0
+  swift build "${X86[@]}"
+  BIN_DIR="$(swift build -c release --triple arm64-apple-macosx14.0 --show-bin-path)"
+  X86_DIR="$(swift build "${X86[@]}" --show-bin-path)"
+  lipo -create "$BIN_DIR/Sigil" "$X86_DIR/Sigil" -output "$APP/Contents/MacOS/Sigil"
+else
+  swift build -c release
+  BIN_DIR="$(swift build -c release --show-bin-path)"
+  cp "$BIN_DIR/Sigil" "$APP/Contents/MacOS/Sigil"
+fi
 # Drop build-machine rpaths (e.g. the Xcode toolchain); a shipped app should only search its own bundle and the OS.
 otool -l "$APP/Contents/MacOS/Sigil" | awk '/LC_RPATH/{getline; getline; print $2}' | sort -u | while read -r rp; do
   case "$rp" in /usr/lib/swift|@executable_path/*|@loader_path*) ;; *) install_name_tool -delete_rpath "$rp" "$APP/Contents/MacOS/Sigil" ;; esac
