@@ -14,13 +14,16 @@ Kurulu uygulamalar güncellemeyi `https://github.com/<owner>/<repo>/releases/lat
 
 ## Bir kerelik kurulum
 
-Aşağıdaki gizli değerleri **1Password'de** bir kayıtta saklaman önerilir. Örnekler bu kaydın adını "Sigil Release" olarak varsayar. `gh secret set` komutlarını `op read` ile beslersen değerler ne ekranda görünür ne de diske yazılır.
+Aşağıdaki gizli değerleri **1Password'de** saklaman önerilir. `gh secret set` komutlarını `op read` ve `op document get` ile beslersen değerler ne ekranda görünür ne de diske yazılır.
 
 ### 1. Developer ID sertifikası
 
-1. Xcode → Settings → Accounts → Apple ID'ni seç → **Manage Certificates** → `+` → **Developer ID Application**.
-2. Keychain Access'te sertifikayı ve private key'ini birlikte sağ tıkla → **Export** → `.p12` olarak, güçlü bir parolayla kaydet.
-3. `.p12` dosyasını ve parolasını 1Password'e ekle, sonra diskteki dosyayı sil.
+1. Keychain Access → Certificate Assistant → **Request a Certificate From a Certificate Authority…** → "Saved to disk". Bu, bir `.certSigningRequest` dosyası üretir. "Create a Certificate Authority" seçeneğini **kullanma**.
+2. developer.apple.com → Certificates → `+` → **Developer ID Application** → **G2 Sub-CA** → CSR'ı yükle → `.cer` dosyasını indir ve çift tıkla. (Xcode → Settings → Accounts → Manage Certificates da aynı işi görür.)
+3. `find-identity` sertifikayı görüyor ama "valid" saymıyorsa Apple ara sertifikası eksiktir:
+   `curl -fsSLO https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer && security import DeveloperIDG2CA.cer -k ~/Library/Keychains/login.keychain-db`
+4. Keychain Access'te sertifikayı ve private key'ini birlikte sağ tıkla → **Export** → `.p12` olarak, güçlü bir parolayla kaydet.
+5. `.p12` dosyasını ve parolasını 1Password'e ekle, sonra diskteki dosyayı sil.
 
 İmza kimliğinin tam adını şu komutla görebilirsin. Çıktı `Developer ID Application: Ad Soyad (TEAMID)` biçiminde olur.
 
@@ -30,7 +33,7 @@ security find-identity -v -p codesigning
 
 ### 2. Notarization için App Store Connect API anahtarı
 
-App Store Connect → Users and Access → Integrations → **Team Keys** → `+` → rol: **Developer**.
+App Store Connect → Users and Access → Integrations → **Team Keys** → `+` → rol: **Developer**. Sayfada "Request Access" görünüyorsa, önce Account Holder bu butonla API erişimini açmalı.
 
 `.p8` dosyası yalnızca bir kez indirilebilir. **Key ID** ve **Issuer ID** değerlerini not al. Üçünü de 1Password'e koy.
 
@@ -51,13 +54,25 @@ Komut public key'i yazdırır, private key'i de login Keychain'e kaydeder. CI i�
 
 ### 4. GitHub secret'ları ve değişkenleri
 
+Örnek düzen: "Sigil Release" adlı bir **kasa**, içinde üç **Document** kaydı.
+
+| Kayıt | Dosya | Alanlar |
+|---|---|---|
+| `Sertifikalar` | `.p12` | `password` |
+| `AuthKey_<KEYID>` | `.p8` | `key-id`, `issuer-id` |
+| `sparkle_private` | `sparkle_private.key` | – |
+
+`pipefail` önemli. Bu ayar olmadan başarısız bir `op` adımı GitHub'a **boş** bir secret yazar ve zincir devam eder.
+
 ```bash
-op read "op://Private/Sigil Release/DeveloperID.p12" | base64 | gh secret set DEVELOPER_ID_P12_BASE64
-op read "op://Private/Sigil Release/p12 password"   | gh secret set DEVELOPER_ID_P12_PASSWORD
-op read "op://Private/Sigil Release/AuthKey.p8"     | gh secret set NOTARY_KEY_P8
-op read "op://Private/Sigil Release/key id"         | gh secret set NOTARY_KEY_ID
-op read "op://Private/Sigil Release/issuer id"      | gh secret set NOTARY_ISSUER_ID
-op read "op://Private/Sigil Release/sparkle private"| gh secret set SPARKLE_PRIVATE_KEY
+(set -o pipefail; V="Sigil Release"; N="AuthKey_<KEYID>"
+ op document get Sertifikalar    --vault "$V" | base64 | gh secret set DEVELOPER_ID_P12_BASE64 &&
+ op read "op://$V/Sertifikalar/password"      | gh secret set DEVELOPER_ID_P12_PASSWORD &&
+ op document get "$N"            --vault "$V" | gh secret set NOTARY_KEY_P8 &&
+ op read "op://$V/$N/key-id"                  | gh secret set NOTARY_KEY_ID &&
+ op read "op://$V/$N/issuer-id"               | gh secret set NOTARY_ISSUER_ID &&
+ op document get sparkle_private --vault "$V" | gh secret set SPARKLE_PRIVATE_KEY &&
+ echo "6/6 tamam")
 
 gh variable set SIGN_IDENTITY      --body "Developer ID Application: Ad Soyad (TEAMID)"
 gh variable set SPARKLE_PUBLIC_KEY --body "<generate_keys çıktısındaki public key>"
