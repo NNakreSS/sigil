@@ -22,12 +22,17 @@ struct SigilVector: VectorArithmetic {
     func points(in rect: CGRect, inset: CGFloat) -> [CGPoint] {
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let R = min(rect.width, rect.height) / 2 - inset
-        let rot = padded[SigilGeometry.vertexCount]
-        return (0..<SigilGeometry.vertexCount).map { i in
-            let a = Double(i) / Double(SigilGeometry.vertexCount) * 2 * .pi + rot * .pi / 180 - .pi / 2
-            let r = padded[i]
-            return CGPoint(x: c.x + cos(a) * R * r, y: c.y + sin(a) * R * r)
+        let values = padded
+        let step: Double = 2 * Double.pi / Double(SigilGeometry.vertexCount)
+        let offset: Double = values[SigilGeometry.vertexCount] * Double.pi / 180 - Double.pi / 2
+        let radius = Double(R)
+        var points: [CGPoint] = []
+        for i in 0..<SigilGeometry.vertexCount {
+            let angle: Double = Double(i) * step + offset
+            let length: Double = radius * values[i]
+            points.append(CGPoint(x: Double(c.x) + cos(angle) * length, y: Double(c.y) + sin(angle) * length))
         }
+        return points
     }
 }
 

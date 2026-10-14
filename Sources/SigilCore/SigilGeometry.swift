@@ -33,10 +33,15 @@ public struct SigilGeometry: Equatable, Hashable, Sendable {
 
     /// Unit-circle vertex positions (centre 0,0; radius 1), y pointing down.
     public var vertices: [(x: Double, y: Double)] {
-        radii.enumerated().map { i, r in
-            let a = (Double(i) / Double(Self.vertexCount)) * 2 * .pi + rotation * .pi / 180 - .pi / 2
-            return (cos(a) * r, sin(a) * r)
+        // Spelled out step by step with explicit types: older Swift compilers time out type-checking the one-liner.
+        let step: Double = 2 * Double.pi / Double(Self.vertexCount)
+        let offset: Double = rotation * Double.pi / 180 - Double.pi / 2
+        var out: [(x: Double, y: Double)] = []
+        for (i, r) in radii.enumerated() {
+            let angle: Double = Double(i) * step + offset
+            out.append((x: cos(angle) * r, y: sin(angle) * r))
         }
+        return out
     }
 }
 
