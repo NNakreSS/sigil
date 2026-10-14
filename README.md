@@ -11,6 +11,7 @@ SSH sunucularını tek yerden yöneten, anahtarları senin yerine üreten, kuran
 [![CI](https://github.com/NNakreSS/sigil/actions/workflows/ci.yml/badge.svg)](https://github.com/NNakreSS/sigil/actions/workflows/ci.yml)
 [![Son sürüm](https://img.shields.io/github/v/release/NNakreSS/sigil?label=s%C3%BCr%C3%BCm&color=534AB7)](https://github.com/NNakreSS/sigil/releases/latest)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-26215C)
+[![Lisans: MIT](https://img.shields.io/badge/lisans-MIT-0F6E56)](LICENSE)
 
 [**İndir**](https://github.com/NNakreSS/sigil/releases/latest) · [Güvenlik](#güvenlik-sade-bir-dille) · [Özellikler](#özellikler) · [Geliştirme](#geliştirme)
 
@@ -198,3 +199,7 @@ SIGIL_SANDBOX=/tmp/sd-try build/Sigil.app/Contents/MacOS/Sigil
 </details>
 
 Yayınlama adımları için [RELEASING.md](RELEASING.md) dosyasına bak.
+
+## Lisans
+
+[MIT](LICENSE). Kullanılan kütüphaneler: [Sparkle](https://github.com/sparkle-project/Sparkle) (MIT) ve [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT).
