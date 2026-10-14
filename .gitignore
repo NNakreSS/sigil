@@ -1,0 +1,11 @@
+.DS_Store
+.build/
+build/
+*.xcodeproj
+.swiftpm/
+dist/
+# never commit signing material
+*.p12
+*.p8
+*.cer
+sparkle_private*
