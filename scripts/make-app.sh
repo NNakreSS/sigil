@@ -86,7 +86,11 @@ FW="$APP/Contents/Frameworks/Sparkle.framework"
 codesign "${SIGN_FLAGS[@]}" "$FW/Versions/B/Autoupdate"
 codesign "${SIGN_FLAGS[@]}" "$FW/Versions/B/Updater.app"
 codesign "${SIGN_FLAGS[@]}" "$FW"
-for b in "$APP"/Contents/Resources/*.bundle; do [ -d "$b" ] && codesign "${SIGN_FLAGS[@]}" "$b"; done
+# SwiftPM resource bundles are only signable when they have a real bundle layout; flat ones (no Contents/Info.plist,
+# as some Xcode versions produce) are plain resource folders and get sealed by the app's own signature.
+for b in "$APP"/Contents/Resources/*.bundle; do
+  [ -f "$b/Contents/Info.plist" ] && codesign "${SIGN_FLAGS[@]}" "$b"
+done
 codesign "${SIGN_FLAGS[@]}" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
 
