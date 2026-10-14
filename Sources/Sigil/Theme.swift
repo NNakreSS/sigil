@@ -87,10 +87,24 @@ enum ServerStatusStyle {
 }
 
 extension KeyStoreKind {
-    var symbol: String { self == .onePassword ? "lock.shield.fill" : "key.horizontal.fill" }
-    var tint: Color { self == .onePassword ? .accentInk : .amberInk }
+    var symbol: String {
+        switch self {
+        case .onePassword: return "lock.shield.fill"
+        case .keychain: return "key.horizontal.fill"
+        case .secureEnclave: return "touchid"
+        }
+    }
+    var tint: Color {
+        switch self {
+        case .onePassword: return .accentInk
+        case .keychain: return .amberInk
+        case .secureEnclave: return .verdigris
+        }
+    }
     var explanation: String {
         switch self {
+        case .secureEnclave:
+            return "Anahtar Mac’in güvenlik çipinde üretilir; hiçbir şekilde dışarı çıkarılamaz. Her giriş Touch ID ister, Terminal’den bile. Sigil bu sunuculara arka planda hiç bağlanmaz."
         case .onePassword:
             return "Anahtar 1Password’de üretilir, hiç diske yazılmaz. Her kullanım Touch ID ile onaylanır; yenileme onay ister."
         case .keychain:

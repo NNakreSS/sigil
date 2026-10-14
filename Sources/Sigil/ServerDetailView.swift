@@ -2,6 +2,14 @@ import SigilCore
 import SwiftUI
 
 struct ServerDetailView: View {
+    static func rotateHelp(_ store: KeyStoreKind) -> String {
+        switch store {
+        case .keychain: return "Önce yeni anahtar doğrulanır, sonra eskisi silinir."
+        case .onePassword: return "1Password onay ister."
+        case .secureEnclave: return "Touch ID üç kez sorulur: eski anahtarla kurulum, yeni anahtarla doğrulama ve eskisinin silinmesi."
+        }
+    }
+
     @Environment(DeckModel.self) private var model
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -193,11 +201,13 @@ struct ServerDetailView: View {
                 button: ("Göster", { scrollTarget = "keys" })
             ))
         }
-        if s.store == .onePassword, s.isRotationDue(retryAfter: 0) {
+        if s.store.asksForApproval, s.isRotationDue(retryAfter: 0) {
             return AnyView(banner(
                 icon: "key.fill", tint: .amberInk,
                 title: "Yeni mühür zamanı",
-                text: "1Password anahtarları onayın olmadan yenilenmez. Yenile’ye bas ve 1Password’ün sorduğu onayları ver.",
+                text: s.store == .secureEnclave
+                    ? "Secure Enclave anahtarları onayın olmadan yenilenmez. Yenile’ye bas; Touch ID birkaç kez sorulur."
+                    : "1Password anahtarları onayın olmadan yenilenmez. Yenile’ye bas ve 1Password’ün sorduğu onayları ver.",
                 button: ("Yenile", { rotate(s) })
             ))
         }
@@ -255,6 +265,10 @@ struct ServerDetailView: View {
                 }
             }
             InfoRow(label: "Eklendi") { Text(s.createdAt, format: .dateTime.day().month().year()) }
+            if model.backgroundOff(s) {
+                Text("Bu sunucuya arka planda hiç bağlanılmaz. Durum, sağlık ve denetim yalnızca sen istediğinde, Touch ID ile yapılır.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -291,7 +305,7 @@ struct ServerDetailView: View {
                 Label("Yeni mühür bas", systemImage: "arrow.triangle.2.circlepath")
             }
             .disabled(model.busy[s.id] != nil)
-            .help(s.store == .onePassword ? "1Password onay ister." : "Önce yeni anahtar doğrulanır, sonra eskisi silinir.")
+            .help(Self.rotateHelp(s.store))
             .padding(.top, 2)
         }
     }

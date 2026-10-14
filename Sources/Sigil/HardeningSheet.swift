@@ -88,9 +88,16 @@ struct HardeningSheet: View {
                 Label("“\(state.user)” root değil ve şifresiz sudo yetkisi yok. Sigil sadece durumu gösterebilir.", systemImage: "lock.trianglebadge.exclamationmark")
                     .font(.callout).foregroundStyle(Color.amberInk)
             }
+            if keepsPasswordForRecovery {
+                Label("Secure Enclave anahtarı bu Mac’e bağlı: Mac kaybolursa sunucuya şifreyle girebilmen için şifreli giriş varsayılan olarak açık bırakılıyor.",
+                      systemImage: "lifepreserver")
+                    .font(.caption).foregroundStyle(Color.accentInk).fixedSize(horizontal: false, vertical: true)
+            }
             item(isOn: $plan.disablePasswordLogin, done: !state.passwordLoginOpen,
                  title: "Şifreyle girişi kapat",
-                 detail: "Brute-force denemelerinin hedefi ortadan kalkar. Girişler yalnızca anahtarla olur.",
+                 detail: keepsPasswordForRecovery
+                     ? "Kapatırsan bu Mac kaybolduğunda sunucuya yalnızca sağlayıcının konsolundan girebilirsin."
+                     : "Brute-force denemelerinin hedefi ortadan kalkar. Girişler yalnızca anahtarla olur.",
                  enabled: state.sshdIncludesDropIns)
             item(isOn: $plan.restrictRootLogin, done: !state.rootPasswordLoginOpen,
                  title: state.isRoot ? "Root için şifreyi kapat" : "Root girişini kapat",
@@ -134,13 +141,17 @@ struct HardeningSheet: View {
         .opacity(enabled || done ? 1 : 0.55)
     }
 
+    /// Secure Enclave keys cannot be backed up, so the server's password stays the way back in if the Mac is lost.
+    private var keepsPasswordForRecovery: Bool { server.store == .secureEnclave }
+
     private func load() async {
         do {
             state = try await model.hardeningState(server.id)
             // Keep public services reachable when the firewall goes up.
             plan.firewallPorts = state.listeningPorts
-            plan.disablePasswordLogin = state.passwordLoginOpen && state.sshdIncludesDropIns
+            plan.disablePasswordLogin = state.passwordLoginOpen && state.sshdIncludesDropIns && !keepsPasswordForRecovery
             plan.restrictRootLogin = state.rootPasswordLoginOpen && state.sshdIncludesDropIns
+                && !(keepsPasswordForRecovery && state.isRoot)
             plan.installFail2ban = state.fail2ban != "active" && state.isDebianLike
             phase = .review
         } catch {

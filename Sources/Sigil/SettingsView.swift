@@ -78,13 +78,13 @@ private struct KeySettings: View {
     @Environment(DeckModel.self) private var model
     @Environment(AppRouter.self) private var router
     @Environment(\.openWindow) private var openWindow
-    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.onePassword.rawValue
+    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.preferredDefault.rawValue
     @AppStorage("defaultRotationDays") private var defaultRotationDays = 30
 
     var body: some View {
         Form {
             Picker("Yeni sunucularda anahtar deposu", selection: $defaultKeyStore) {
-                ForEach(KeyStoreKind.allCases) { Label($0.title, systemImage: $0.symbol).tag($0.rawValue) }
+                ForEach(KeyStoreKind.available) { Label($0.title, systemImage: $0.symbol).tag($0.rawValue) }
             }
             Picker("Varsayılan yenileme", selection: $defaultRotationDays) {
                 ForEach(RotationChoice.all, id: \.days) { Text($0.label).tag($0.days) }

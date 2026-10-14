@@ -176,6 +176,10 @@ struct EmergencyRotateSheet: View {
                 Label("1Password sunucuları için her yeni anahtarda onay istenecek.", systemImage: "lock.shield")
                     .font(.caption).foregroundStyle(Color.accentInk)
             }
+            if model.servers.contains(where: { $0.store == .secureEnclave }) {
+                Label("Secure Enclave sunucularının her biri için Touch ID üç kez sorulacak.", systemImage: "touchid")
+                    .font(.caption).foregroundStyle(Color.verdigris)
+            }
             ScrollView {
                 VStack(spacing: 6) {
                     ForEach(model.servers) { s in

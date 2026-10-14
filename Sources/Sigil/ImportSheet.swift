@@ -6,7 +6,7 @@ import SwiftUI
 struct ImportSheet: View {
     @Environment(DeckModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.onePassword.rawValue
+    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.preferredDefault.rawValue
     @AppStorage("defaultRotationDays") private var defaultRotationDays = 30
 
     private enum RowState: Equatable {
@@ -51,7 +51,7 @@ struct ImportSheet: View {
 
                 HStack(spacing: 16) {
                     Picker("Anahtar", selection: $keyStore) {
-                        ForEach(KeyStoreKind.allCases) { Text($0.title).tag($0) }
+                        ForEach(KeyStoreKind.available) { Text($0.title).tag($0) }
                     }
                     .frame(width: 230)
                     .disabled(running)
@@ -94,8 +94,8 @@ struct ImportSheet: View {
             candidates = model.importCandidates()
             selected = Set(candidates.map(\.alias))
             interval = defaultRotationDays
-            let preferred = KeyStoreKind(rawValue: defaultKeyStore) ?? .keychain
-            keyStore = preferred == .onePassword && !model.onePasswordStatus.isReady ? .keychain : preferred
+            let preferred = KeyStoreKind(rawValue: defaultKeyStore) ?? .preferredDefault
+            keyStore = KeyStoreKind.usable(preferred, onePasswordReady: model.onePasswordStatus.isReady)
         }
         .sheet(item: $confirming) { c in
             FingerprintConfirmSheet(candidate: c, keys: scanned[c.alias] ?? []) { ok in

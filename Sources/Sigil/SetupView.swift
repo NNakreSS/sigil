@@ -6,7 +6,7 @@ import SwiftUI
 struct SetupView: View {
     @Environment(DeckModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.onePassword.rawValue
+    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.preferredDefault.rawValue
     @AppStorage("onboardingDone") private var onboardingDone = false
 
     @State private var notificationsOn = false
@@ -15,7 +15,7 @@ struct SetupView: View {
     @State private var checking = false
     @State private var justInstalled = UserDefaults.standard.bool(forKey: Installer.justInstalledKey)
 
-    private var store: KeyStoreKind { KeyStoreKind(rawValue: defaultKeyStore) ?? .keychain }
+    private var store: KeyStoreKind { KeyStoreKind(rawValue: defaultKeyStore) ?? .preferredDefault }
     private var status: OnePasswordStatus { model.onePasswordStatus }
 
     var body: some View {
@@ -45,8 +45,8 @@ struct SetupView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     step(1, "Anahtarlar nerede saklansın?") {
-                        HStack(spacing: 12) {
-                            ForEach(KeyStoreKind.allCases) { kind in storeOption(kind) }
+                        VStack(spacing: 10) {
+                            ForEach(KeyStoreKind.available) { kind in storeOption(kind) }
                         }
                     }
 
@@ -164,21 +164,24 @@ struct SetupView: View {
         return Button {
             defaultKeyStore = kind.rawValue
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: kind.symbol).font(.title2).foregroundStyle(kind.tint)
-                    Spacer()
-                    if kind == .onePassword { Chip(text: "Önerilen", systemImage: "star.fill", tint: .accentInk) }
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(selected ? Color.accentInk : Color.secondary)
-                        .contentTransition(.symbolEffect(.replace))
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: kind.symbol).font(.title2).foregroundStyle(kind.tint).frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(kind.title).font(.engraved(16))
+                        if kind == .preferredDefault { Chip(text: "Önerilen", systemImage: "star.fill", tint: .accentInk) }
+                    }
+                    Text(kind.explanation).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(kind.title).font(.engraved(16))
-                Text(kind.explanation).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? Color.accentInk : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
             }
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(Color.vellum, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(selected ? Color.accentInk : Color.hairline, lineWidth: selected ? 2 : 1))

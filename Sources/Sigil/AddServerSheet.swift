@@ -8,7 +8,7 @@ struct AddServerSheet: View {
     @Environment(DeckModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(AppRouter.self) private var router
-    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.onePassword.rawValue
+    @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.preferredDefault.rawValue
     @AppStorage("defaultRotationDays") private var defaultRotationDays = 30
     let onAdded: (Server) -> Void
 
@@ -36,7 +36,7 @@ struct AddServerSheet: View {
 
     private var canSubmit: Bool {
         !alias.trimmed.isEmpty && !host.trimmed.isEmpty && !user.trimmed.isEmpty && !password.isEmpty
-            && (keyStore == .keychain || model.onePasswordStatus.isReady)
+            && (keyStore != .onePassword || model.onePasswordStatus.isReady)
     }
 
     var body: some View {
@@ -70,8 +70,8 @@ struct AddServerSheet: View {
         .interactiveDismissDisabled(phase == .working || phase == .scanning || phase == .done)
         .onAppear {
             interval = defaultRotationDays
-            let preferred = KeyStoreKind(rawValue: defaultKeyStore) ?? .keychain
-            keyStore = preferred == .onePassword && !model.onePasswordStatus.isReady ? .keychain : preferred
+            let preferred = KeyStoreKind(rawValue: defaultKeyStore) ?? .preferredDefault
+            keyStore = KeyStoreKind.usable(preferred, onePasswordReady: model.onePasswordStatus.isReady)
             focus = .alias
         }
     }
@@ -208,7 +208,7 @@ struct AddServerSheet: View {
                 GridRow {
                     label("Anahtar")
                     Picker("", selection: $keyStore) {
-                        ForEach(KeyStoreKind.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                        ForEach(KeyStoreKind.available) { Label($0.title, systemImage: $0.symbol).tag($0) }
                     }
                     .pickerStyle(.segmented).labelsHidden()
                 }

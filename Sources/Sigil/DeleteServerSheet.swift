@@ -2,6 +2,17 @@ import SigilCore
 import SwiftUI
 
 struct DeleteServerSheet: View {
+    static func explanation(_ store: KeyStoreKind) -> String {
+        switch store {
+        case .onePassword:
+            return "ssh kısayolu ve kayıt silinir; 1Password’deki anahtar Arşiv’e taşınır (geri alınabilir). Sunucunun kendisine dokunulmaz."
+        case .secureEnclave:
+            return "Secure Enclave’deki anahtar kalıcı olarak silinir; ssh kısayolu ve kayıt da gider. Sunucunun kendisine dokunulmaz."
+        case .keychain:
+            return "Bu Mac’teki anahtar, ssh kısayolu ve kayıt silinir. Sunucunun kendisine dokunulmaz."
+        }
+    }
+
     @Environment(DeckModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let server: Server
@@ -19,9 +30,7 @@ struct DeleteServerSheet: View {
                 Text("“\(server.alias)” silinsin mi?").font(.engraved(22, weight: .bold))
             }
 
-            Text(server.store == .onePassword
-                 ? "ssh kısayolu ve kayıt silinir; 1Password’deki anahtar Arşiv’e taşınır (geri alınabilir). Sunucunun kendisine dokunulmaz."
-                 : "Bu Mac’teki anahtar, ssh kısayolu ve kayıt silinir. Sunucunun kendisine dokunulmaz.")
+            Text(Self.explanation(server.store))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             Toggle(isOn: $removeRemote) {
