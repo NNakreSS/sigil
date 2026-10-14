@@ -15,6 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
+      - name: Use the newest Xcode on the runner
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+          xcodebuild -version
+          swift --version
       - name: Metal toolchain (needed by SwiftTerm's shaders on newer Xcode)
         run: xcrun metal -v >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
       - name: Test (unit + end-to-end against a throw-away local sshd)
