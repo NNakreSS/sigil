@@ -454,18 +454,27 @@ struct TerminalHost: NSViewRepresentable {
                 return event
             }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, event.keyCode == 48,
-                      event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty,
-                      let view = self.view as? LocalProcessTerminalView, view.window?.firstResponder === view,
-                      let suggestion = self.session.suggestion, self.currentInput(view) == suggestion.input
-                else { return event }
-                view.send(data: ArraySlice(Array(suggestion.remainder.utf8)))
-                self.session.suggestion = nil
-                return nil
+                // Local event monitors run on the main thread; only a Bool crosses into the main actor.
+                nonisolated(unsafe) let event = event
+                let handled = MainActor.assumeIsolated { self?.completeOnTab(event) ?? false }
+                return handled ? nil : event
             }
             timer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshSuggestion() }
             }
+        }
+
+        /// Tab with a suggestion showing types the rest of it and is swallowed (true); any other key passes through.
+        @MainActor
+        private func completeOnTab(_ event: NSEvent) -> Bool {
+            guard event.keyCode == 48,
+                  event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty,
+                  let view = view as? LocalProcessTerminalView, view.window?.firstResponder === view,
+                  let suggestion = session.suggestion, currentInput(view) == suggestion.input
+            else { return false }
+            view.send(data: ArraySlice(Array(suggestion.remainder.utf8)))
+            session.suggestion = nil
+            return true
         }
 
         func stopWatching() {
