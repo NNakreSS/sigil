@@ -66,6 +66,11 @@ struct ContentView: View {
         .sheet(isPresented: $router.showingEmergency) {
             EmergencyRotateSheet()
         }
+        .sheet(item: $router.panel) { request in
+            if let server = model.server(request.serverID) {
+                ServerPanelSheet(server: server, kind: request.kind)
+            }
+        }
         .sheet(item: $router.maintenance) { request in
             if let server = model.server(request.serverID) {
                 MaintenanceSheet(server: server, kind: request.kind)

@@ -151,6 +151,17 @@ struct ServerDetailView: View {
                     .buttonStyle(InkButtonStyle())
                     .help("Bağlan (⌘T) · \(TerminalApp.preferred.title)")
 
+                    Button { router.panel = .init(serverID: s.id, kind: .files) } label: {
+                        Label("Dosyalar", systemImage: "folder")
+                    }
+                    .help("Sunucudaki dosyalar: gez, önizle, yükle, indir")
+                    if ServerProfile(s.health)?.tools.contains("docker") ?? true {
+                        Button { router.panel = .init(serverID: s.id, kind: .docker) } label: {
+                            Label("Docker", systemImage: "cube.box")
+                        }
+                        .help("Container’lar, loglar, yeniden başlatma")
+                    }
+
                     Button {
                         Links.copy("ssh \(s.alias)")
                         Haptics.tap()

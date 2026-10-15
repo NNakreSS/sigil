@@ -18,6 +18,8 @@ final class AppRouter {
     var showingActions = false
     /// Update / restart sheet for a server.
     var maintenance: MaintenanceRequest?
+    /// Files or Docker panel for a server.
+    var panel: PanelRequest?
     /// Waiting for "yes, connect to production".
     var pendingProductionConnect: Server?
     /// Production servers the user already confirmed in this app session.
@@ -193,7 +195,7 @@ struct SigilApp: App {
         model.notify = { title, body in Notifier.post(title, body) }
         // Tunnels are child ssh processes; never leave them running (and holding ports) after Sigil quits.
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [model] _ in
-            MainActor.assumeIsolated { model.stopAllTunnels() }
+            MainActor.assumeIsolated { model.stopAllTunnels(); model.closeAllSessions() }
         }
         // In sandbox runs, point in-app and external ssh at the sandboxed config.
         if ProcessInfo.processInfo.environment["SIGIL_SANDBOX"] != nil { router.terminals.configFile = model.paths.mainConfig.path }
