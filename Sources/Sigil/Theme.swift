@@ -101,6 +101,16 @@ extension KeyStoreKind {
         case .secureEnclave: return .verdigris
         }
     }
+    /// What the approval prompt will look like, so a system name in it does not come as a surprise.
+    var promptNote: String? {
+        switch self {
+        case .secureEnclave:
+            return "Touch ID penceresinde istekte bulunan olarak “ctkcard” yazar: bu, anahtarı Secure Enclave’de tutan macOS servisidir."
+        case .onePassword, .keychain:
+            return nil
+        }
+    }
+
     var explanation: String {
         switch self {
         case .secureEnclave:

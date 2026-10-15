@@ -66,6 +66,10 @@ struct ImportSheet: View {
                     .help("Kapalıyken eski anahtarın sunucuda kalır; başka yerlerde de kullanıyorsan böyle bırak.")
                 Text("Eski ayar silinmez: ~/.ssh/config yedeklenir ve blok yorum satırına alınır.")
                     .font(.caption).foregroundStyle(.secondary)
+                if let note = keyStore.promptNote {
+                    Label(note, systemImage: "touchid").font(.caption).foregroundStyle(Color.verdigris)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             HStack {

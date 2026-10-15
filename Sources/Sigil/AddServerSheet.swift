@@ -224,6 +224,10 @@ struct AddServerSheet: View {
             .disabled(phase == .scanning)
 
             Text(keyStore.explanation).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let note = keyStore.promptNote {
+                Label(note, systemImage: "touchid").font(.caption).foregroundStyle(Color.verdigris)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if keyStore == .onePassword && !model.onePasswordStatus.isReady {
                 HStack {

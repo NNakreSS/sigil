@@ -81,7 +81,7 @@ Bu, anahtarın nerede durduğuna bağlı:
 
 | Anahtar deposu | Terminal'den `ssh sunucum` yazan biri |
 |---|---|
-| **Secure Enclave** | Her bağlantıda Touch ID istenir. Parmak izin olmadan giremez, Sigil'i hiç açmasa da. |
+| **Secure Enclave** | Her bağlantıda Touch ID istenir. Parmak izin olmadan giremez, Sigil'i hiç açmasa da. Pencerede istekte bulunan olarak **“ctkcard”** yazar: bu, anahtarı Secure Enclave'de tutan macOS servisidir. |
 | **1Password** | 1Password onay ister. 1Password açıksa ve o uygulamaya daha önce izin verdiysen sormadan geçebilir; 1Password'ün otomatik kilit süresini kısa tut. |
 | **Keychain** | Mac'in kilidi açıkken **sormadan girer.** Bu korumayı istiyorsan Secure Enclave'i seç. |
 
