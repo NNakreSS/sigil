@@ -136,7 +136,11 @@ enum TerminalTheme {
     static var isLight: Bool { p.isLight }
     /// Panels drawn over the terminal (palette, find, explain): solid and in the terminal's own colours, never a
     /// translucent material that would pick up the app's light or dark look.
-    static var panel: Color { Color(nsColor: background.blended(withFraction: p.isLight ? 0.04 : 0.10, of: p.isLight ? .black : .white) ?? background) }
+    /// Darker than a dark terminal, near-white over a light one: text on it always has the most contrast.
+    static var panel: Color {
+        Color(nsColor: p.isLight ? (background.blended(withFraction: 0.7, of: .white) ?? background)
+                                 : (background.blended(withFraction: 0.35, of: .black) ?? background))
+    }
     static var colorScheme: ColorScheme { p.isLight ? .light : .dark }
 
     // Semantic colours for panels over the terminal, taken from the terminal's own (bright, on dark) ANSI colours so
@@ -147,7 +151,8 @@ enum TerminalTheme {
     static var warn: Color { ansiColor(11, 3) }
     static var bad: Color { ansiColor(9, 1) }
     static var text: Color { Color(nsColor: foreground) }
-    static var muted: Color { Color(nsColor: foreground).opacity(0.62) }
+    static var muted: Color { Color(nsColor: foreground).opacity(p.isLight ? 0.72 : 0.74) }
+    static var faint: Color { Color(nsColor: foreground).opacity(0.5) }
     static var panelStroke: Color { Color(nsColor: foreground).opacity(p.isLight ? 0.14 : 0.16) }
     static var ansi: [(UInt16, UInt16, UInt16)] {
         p.ansi.map { (UInt16(($0 >> 16) & 0xFF), UInt16(($0 >> 8) & 0xFF), UInt16($0 & 0xFF)) }

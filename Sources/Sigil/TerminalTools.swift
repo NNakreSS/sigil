@@ -18,15 +18,16 @@ struct TerminalFindBar: View {
     var body: some View {
         @Bindable var terminals = terminals
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Terminalde ara", text: $terminals.findTerm)
+            Image(systemName: "magnifyingglass").foregroundStyle(TerminalTheme.muted)
+            TextField("", text: $terminals.findTerm, prompt: Text("Terminalde ara").foregroundColor(TerminalTheme.faint))
+                .foregroundStyle(TerminalTheme.text)
                 .textFieldStyle(.plain)
                 .frame(width: 180)
                 .focused($focused)
                 .onSubmit { if ReturnKey.pressed { terminals.find(backwards: NSEvent.modifierFlags.contains(.shift)) } }
                 .onChange(of: terminals.findTerm) { _, _ in terminals.find() }
             Text(terminals.findTerm.isEmpty ? "" : "\(terminals.findSummary.index)/\(terminals.findSummary.total)")
-                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                .font(.caption.monospacedDigit()).foregroundStyle(TerminalTheme.muted)
                 .frame(minWidth: 36, alignment: .trailing)
             Button { terminals.find(backwards: true) } label: { Image(systemName: "chevron.up") }
                 .help("Önceki (⇧⌘G)")
@@ -152,7 +153,8 @@ struct CommandPalette: View {
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "command").foregroundStyle(TerminalTheme.accent)
-                TextField("Ne yapmak istiyorsun? (ör. disk, nginx log, port)", text: $query)
+                TextField("", text: $query, prompt: Text("Ne yapmak istiyorsun? (ör. disk, nginx log, port)").foregroundColor(TerminalTheme.faint))
+                    .foregroundStyle(TerminalTheme.text)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($focused)
@@ -163,7 +165,7 @@ struct CommandPalette: View {
             if profile == nil, let server {
                 Label("“\(server.alias)” için hangi araçların kurulu olduğu bilinmiyor; tüm komutlar gösteriliyor. Sağlık kartında “Yenile”ye basınca liste sunucuya göre daralır.",
                       systemImage: "info.circle")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(TerminalTheme.muted)
                     .padding(.horizontal, 14).padding(.bottom, 8)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -173,8 +175,8 @@ struct CommandPalette: View {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
                             if query.isEmpty, i == 0 || items[i - 1].group != item.group {
-                                Label(item.group, systemImage: item.symbol)
-                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                Label(item.group.uppercased(with: Locale(identifier: "tr_TR")), systemImage: item.symbol)
+                                    .font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(TerminalTheme.accent)
                                     .padding(.horizontal, 10).padding(.top, i == 0 ? 4 : 12).padding(.bottom, 2)
                             }
                             row(item, highlighted: i == selected)
@@ -205,8 +207,8 @@ struct CommandPalette: View {
     private func row(_ item: PaletteItem, highlighted: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.callout.weight(.medium))
-                Text(item.display).font(.terminalSmall).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                Text(item.title).font(.callout.weight(.semibold)).foregroundStyle(TerminalTheme.text)
+                Text(item.display).font(.terminalSmall).foregroundStyle(TerminalTheme.muted).lineLimit(1).truncationMode(.tail)
             }
             Spacer(minLength: 8)
             if item.changesSystem {
@@ -218,7 +220,10 @@ struct CommandPalette: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(highlighted ? TerminalTheme.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(highlighted ? TerminalTheme.accent.opacity(0.24) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .leading) {
+            if highlighted { Capsule().fill(TerminalTheme.accent).frame(width: 3).padding(.vertical, 8) }
+        }
         .contentShape(Rectangle())
     }
 
@@ -228,7 +233,7 @@ struct CommandPalette: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Öner: “\(q)”").font(.callout.weight(.medium))
                 Text(AssistantSettings.shared.askSubtitle)
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(TerminalTheme.muted)
             }
             Spacer()
         }
@@ -241,7 +246,7 @@ struct CommandPalette: View {
         let q = query.trimmingCharacters(in: .whitespaces)
         if !q.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Eşleşen komut yok. ⏎ ile “\(q)” terminale yazılır.").font(.callout).foregroundStyle(.secondary)
+                Text("Eşleşen komut yok. ⏎ ile “\(q)” terminale yazılır.").font(.callout).foregroundStyle(TerminalTheme.muted)
                 Button { try? model.saveAction(QuickAction(name: q, command: q)) } label: {
                     Label("“\(q)” komutunu kaydet", systemImage: "plus.circle")
                 }
@@ -286,7 +291,7 @@ struct CommandPalette: View {
             Text(c.filled(values)).font(.terminalSmall).foregroundStyle(TerminalTheme.accent)
                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                .background(TerminalTheme.text.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             HStack(spacing: 14) {
                 hint("⏎", "yaz")
                 hint("⌘⏎", "yaz ve çalıştır")
@@ -301,8 +306,8 @@ struct CommandPalette: View {
         HStack(spacing: 4) {
             Text(key).font(.caption.monospaced().weight(.semibold))
                 .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
-            Text(text).font(.caption).foregroundStyle(.secondary)
+                .background(TerminalTheme.text.opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
+            Text(text).font(.caption).foregroundStyle(TerminalTheme.muted)
         }
     }
 
@@ -394,7 +399,7 @@ struct AssistantAnswerView: View {
                 TextField("", text: $command, axis: .vertical)
                     .font(.terminal).textFieldStyle(.plain)
                     .padding(10)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    .background(TerminalTheme.text.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                     .focused($focused)
                     .onSubmit { if ReturnKey.pressed && !command.isEmpty { type(command) } }
                 Text(answer.explanation).font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -408,8 +413,8 @@ struct AssistantAnswerView: View {
                     }
                 }
                 Text("Deneysel öneri: çalıştırmadan önce oku. ⏎ komutu terminale yazar, çalıştırmaz.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(AssistantSettings.shared.sourceLabel).font(.caption2).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(TerminalTheme.muted)
+                Text(AssistantSettings.shared.sourceLabel).font(.caption2).foregroundStyle(TerminalTheme.faint)
                 HStack {
                     Button(saved ? "Kaydedildi" : "Komutlarıma kaydet") { save(command); saved = true }
                         .disabled(command.isEmpty || saved).buttonStyle(.borderless).font(.caption)
@@ -420,7 +425,7 @@ struct AssistantAnswerView: View {
                 Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(TerminalTheme.bad).font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Düşünüyor…").foregroundStyle(.secondary) }
+                HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Düşünüyor…").foregroundStyle(TerminalTheme.muted) }
             }
         }
         .padding(16)
