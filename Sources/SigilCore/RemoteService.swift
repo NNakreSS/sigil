@@ -209,7 +209,8 @@ public struct RemoteService: Sendable {
         case .agent(let publicKeyFile, let socket):
             a += [
                 "-i", paths.keyURL(publicKeyFile).appendingPathExtension("pub").path,
-                "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=\(socket)", "-o", "BatchMode=yes",
+                // Quoted: 1Password's socket lives under "Group Containers", and ssh splits -o values on spaces.
+                "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=\"\(socket)\"", "-o", "BatchMode=yes",
                 "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
             ]
         case .securityKey(let fileName):

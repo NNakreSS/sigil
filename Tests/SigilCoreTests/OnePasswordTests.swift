@@ -13,7 +13,10 @@ final class FakeOnePassword {
     init(sandbox: Sandbox) throws {
         dir = sandbox.root.appendingPathComponent("fakeop", isDirectory: true)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("items"), withIntermediateDirectories: true)
-        socket = sandbox.root.appendingPathComponent("agent.sock").path
+        // A space in the path, like 1Password's real "~/Library/Group Containers/…/agent.sock".
+        let socketDir = sandbox.root.appendingPathComponent("Group Containers", isDirectory: true)
+        try FileManager.default.createDirectory(at: socketDir, withIntermediateDirectories: true)
+        socket = socketDir.appendingPathComponent("agent.sock").path
         opPath = dir.appendingPathComponent("op")
         try Self.script.write(to: opPath, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: opPath.path)
@@ -254,5 +257,20 @@ final class OnePasswordFlowTests: XCTestCase {
         XCTAssertTrue(kc1.contains("UseKeychain yes"))
         let r1 = try await sshAlias(box, "op1"); XCTAssertTrue(r1.succeeded, r1.stderr)
         let r2 = try await sshAlias(box, "kc1"); XCTAssertTrue(r2.succeeded, r2.stderr)
+    }
+}
+
+final class AgentArgumentTests: XCTestCase {
+    /// ssh reads `-o` values like config lines and splits them on spaces; the real 1Password socket path has one.
+    func testAgentSocketPathWithSpacesSurvivesSSHParsing() async throws {
+        let box = try Sandbox()
+        let socket = "/Users/someone/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+        var args = RemoteService(paths: box.paths).arguments(
+            for: RemoteTarget(host: "203.0.113.7", port: 22, user: "deploy"),
+            auth: .agent(publicKeyFile: "k1", socket: socket), command: "true")
+        args.removeLast()   // command; `ssh -G` only prints the resolved configuration
+        let r = try await Shell.run("/usr/bin/ssh", ["-G"] + args)
+        XCTAssertTrue(r.succeeded, r.stderr)
+        XCTAssertTrue(r.stdout.contains("identityagent \(socket)\n"), r.stdout)
     }
 }
