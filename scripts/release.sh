@@ -33,6 +33,17 @@ notarize() {
   fi
 }
 
+# Stapling fetches the ticket from Apple; a dropped connection on a CI runner should not sink the release.
+staple() {
+  local n
+  for n in 1 2 3 4 5; do
+    xcrun stapler staple "$1" && return 0
+    echo "stapler başarısız (deneme $n/5); 15 sn sonra tekrar denenecek"
+    sleep 15
+  done
+  return 1
+}
+
 FEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml"
 DIST="dist"
 rm -rf "$DIST" && mkdir -p "$DIST"
@@ -45,7 +56,7 @@ VERSION="$VERSION" SIGN_IDENTITY="$SIGN_IDENTITY" UNIVERSAL=1 \
 # 2. Notarize the app and staple the ticket so it opens offline too.
 ditto -c -k --sequesterRsrc --keepParent build/Sigil.app "$DIST/notarize.zip"
 notarize "$DIST/notarize.zip"
-xcrun stapler staple build/Sigil.app
+staple build/Sigil.app
 rm "$DIST/notarize.zip"
 
 # 3. Branded DMG (APFS + lzfse, background, icon layout); sign, notarize, staple.
@@ -53,7 +64,7 @@ DMG="$DIST/Sigil-${VERSION}.dmg"
 ./scripts/build-dmg.sh "$DMG"
 codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG"
 notarize "$DMG"
-xcrun stapler staple "$DMG"
+staple "$DMG"
 
 # 4. Signed appcast pointing at this release's asset.
 "$(dirname "$0")/../.build/artifacts/sparkle/Sparkle/bin/generate_appcast" \
