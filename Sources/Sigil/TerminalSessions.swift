@@ -15,17 +15,26 @@ final class TerminalSession: Identifiable {
     var exitCode: Int32?
     /// Bumped on reconnect so SwiftUI builds a fresh terminal view.
     var generation = 0
+    /// Run this on the server instead of a login shell (`ssh -t <alias> <command>`), e.g. an update.
+    let remoteCommand: String?
     /// The live terminal view; kept alive while switching tabs so the session keeps its scrollback.
     @ObservationIgnored var host: NSView?
 
-    init(serverID: UUID, alias: String, ordinal: Int) {
+    private let purpose: String?
+
+    init(serverID: UUID, alias: String, ordinal: Int, remoteCommand: String? = nil, purpose: String? = nil) {
         self.serverID = serverID
         self.alias = alias
         self.ordinal = ordinal
         self.title = alias
+        self.remoteCommand = remoteCommand
+        self.purpose = purpose
     }
 
-    var label: String { ordinal > 1 ? "\(alias) · \(ordinal)" : alias }
+    var label: String {
+        if let purpose { return "\(alias) · \(purpose)" }
+        return ordinal > 1 ? "\(alias) · \(ordinal)" : alias
+    }
 }
 
 /// All in-app terminal tabs.
@@ -48,9 +57,9 @@ final class TerminalSessions {
     var active: TerminalSession? { sessions.first { $0.id == activeID } }
 
     @discardableResult
-    func open(_ server: Server) -> TerminalSession {
+    func open(_ server: Server, command: String? = nil, title: String? = nil) -> TerminalSession {
         let n = sessions.filter { $0.serverID == server.id }.count + 1
-        let s = TerminalSession(serverID: server.id, alias: server.alias, ordinal: n)
+        let s = TerminalSession(serverID: server.id, alias: server.alias, ordinal: n, remoteCommand: command, purpose: title)
         sessions.append(s)
         activeID = s.id
         return s
@@ -243,7 +252,8 @@ struct TerminalHost: NSViewRepresentable {
         env["COLORTERM"] = "truecolor"
         if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
         var args = [session.alias]
-        if let configFile { args = ["-F", configFile, session.alias] }
+        if let command = session.remoteCommand { args = ["-t", session.alias, command] }
+        if let configFile { args = ["-F", configFile] + args }
         view.startProcess(executable: "/usr/bin/ssh", args: args, environment: env.map { "\($0.key)=\($0.value)" })
         session.host = view
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }

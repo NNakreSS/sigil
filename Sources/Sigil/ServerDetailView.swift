@@ -171,6 +171,9 @@ struct ServerDetailView: View {
                         Button("Bağlantıyı Test Et") { Task { await model.checkStatus(s.id, interactive: true) } }
                         Button("Anahtarı Şimdi Yenile") { rotate(s) }
                         Divider()
+                        Button("Sunucuyu Güncelle…") { router.maintenance = .init(serverID: s.id, kind: .update) }
+                        Button("Yeniden Başlat…") { router.maintenance = .init(serverID: s.id, kind: .reboot) }
+                        Divider()
                         Button("Sil…", role: .destructive) { showingDelete = true }
                     } label: {
                         Image(systemName: "ellipsis.circle").font(.title3)

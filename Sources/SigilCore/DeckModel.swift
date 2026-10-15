@@ -20,7 +20,7 @@ public final class DeckModel {
     private let config: ConfigManager
     private let keys: KeyService
     private let hostKeys: HostKeyService
-    private let remote: RemoteService
+    let remote: RemoteService
     public let onePassword: OnePasswordService
     private let secureEnclave: SecureEnclaveService
     private var scheduler: Task<Void, Never>?
@@ -953,7 +953,7 @@ public final class DeckModel {
                         secureEnclaveHash: s.secureEnclaveKeyHash)
     }
 
-    private func auth(_ store: KeyStoreKind, _ fileName: String) -> RemoteAuth {
+    func auth(_ store: KeyStoreKind, _ fileName: String) -> RemoteAuth {
         switch store {
         case .keychain: return .key(fileName: fileName)
         case .onePassword: return .agent(publicKeyFile: fileName, socket: onePassword.socketPath)
@@ -972,13 +972,21 @@ public final class DeckModel {
         try config.ensureAliasAvailable(alias)
     }
 
-    private func update(_ id: UUID, _ change: (inout Server) -> Void) {
+    /// Runs `body` with the server marked busy (one operation per server at a time).
+    func withBusy<T>(_ id: UUID, _ label: String, _ body: () async throws -> T) async throws -> T {
+        guard busy[id] == nil else { throw DeckError.busy }
+        busy[id] = label
+        defer { busy[id] = nil }
+        return try await body()
+    }
+
+    func update(_ id: UUID, _ change: (inout Server) -> Void) {
         guard let i = servers.firstIndex(where: { $0.id == id }) else { return }
         change(&servers[i])
         persist()
     }
 
-    private func log(_ id: UUID, _ level: ServerEvent.Level, _ message: String) {
+    func log(_ id: UUID, _ level: ServerEvent.Level, _ message: String) {
         update(id) {
             $0.events.append(ServerEvent(level: level, message: message))
             if $0.events.count > 100 { $0.events.removeFirst($0.events.count - 100) }

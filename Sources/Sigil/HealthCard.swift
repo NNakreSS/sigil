@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HealthCard: View {
     @Environment(DeckModel.self) private var model
+    @Environment(AppRouter.self) private var router
     let server: Server
     @State private var error: String?
 
@@ -20,10 +21,20 @@ struct HealthCard: View {
                         if let up = h.uptimeSeconds { Label("\(uptimeText(up)) açık", systemImage: "clock").font(.callout) }
                         FlowLayout(spacing: 6) {
                             if let s = h.securityUpdates, let u = h.updates {
-                                Chip(text: u == 0 ? "Güncel" : (s > 0 ? "\(u) güncelleme · \(s) güvenlik" : "\(u) güncelleme"),
-                                     systemImage: "arrow.down.circle", tint: s > 0 ? .amberInk : .verdigris)
+                                let chip = Chip(text: u == 0 ? "Güncel" : (s > 0 ? "\(u) güncelleme · \(s) güvenlik" : "\(u) güncelleme"),
+                                                systemImage: "arrow.down.circle", tint: s > 0 ? .amberInk : .verdigris)
+                                if u > 0 {
+                                    Button { maintain(.update) } label: { chip }.buttonStyle(.plain).help("Güncellemeleri gör ve kur")
+                                } else {
+                                    chip
+                                }
                             }
-                            if h.rebootRequired == true { Chip(text: "Yeniden başlatma gerekli", systemImage: "arrow.clockwise.circle", tint: .amberInk) }
+                            if h.rebootRequired == true {
+                                Button { maintain(.reboot) } label: {
+                                    Chip(text: "Yeniden başlatma gerekli", systemImage: "arrow.clockwise.circle", tint: .amberInk)
+                                }
+                                .buttonStyle(.plain).help("Yeniden başlat")
+                            }
                             if let f = h.failedUnits, f > 0 { Chip(text: "\(f) servis çalışmıyor", systemImage: "xmark.octagon", tint: .cinnabar) }
                         }
                     }
@@ -66,16 +77,28 @@ struct HealthCard: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let error { Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(Color.cinnabar) }
-            Button {
-                Task {
-                    error = nil
-                    do { try await model.collectHealth(server.id) } catch { self.error = error.localizedDescription }
+            HStack(spacing: 10) {
+                Button {
+                    Task {
+                        error = nil
+                        do { try await model.collectHealth(server.id) } catch { self.error = error.localizedDescription }
+                    }
+                } label: {
+                    Label(server.health == nil ? "Ölç" : "Yenile", systemImage: "stethoscope")
                 }
-            } label: {
-                Label(server.health == nil ? "Ölç" : "Yenile", systemImage: "stethoscope")
+                if (server.health?.updates ?? 0) > 0 {
+                    Button { maintain(.update) } label: { Label("Güncelle…", systemImage: "arrow.down.circle") }
+                }
+                if server.health?.rebootRequired == true {
+                    Button { maintain(.reboot) } label: { Label("Yeniden başlat…", systemImage: "arrow.clockwise.circle") }
+                }
             }
             .disabled(model.busy[server.id] != nil)
         }
+    }
+
+    private func maintain(_ kind: MaintenanceRequest.Kind) {
+        router.maintenance = .init(serverID: server.id, kind: kind)
     }
 
     private func gb(_ kb: Double) -> String {

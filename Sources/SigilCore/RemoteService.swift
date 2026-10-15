@@ -234,17 +234,18 @@ public struct RemoteService: Sendable {
         return a
     }
 
-    func execute(_ target: RemoteTarget, _ auth: RemoteAuth, _ command: String, stdin: String? = nil) async throws -> ShellResult {
+    func execute(_ target: RemoteTarget, _ auth: RemoteAuth, _ command: String, stdin: String? = nil,
+                 timeout: TimeInterval? = nil) async throws -> ShellResult {
         let args = arguments(for: target, auth: auth, command: command)
         switch auth {
         case .key, .userConfig:
-            return try await Shell.run("/usr/bin/ssh", args, stdin: stdin, timeout: 45)
+            return try await Shell.run("/usr/bin/ssh", args, stdin: stdin, timeout: timeout ?? 45)
         case .agent, .securityKey:
             // Longer: the user may be approving the key use (1Password, Touch ID).
-            return try await Shell.run("/usr/bin/ssh", args, stdin: stdin, timeout: 120)
+            return try await Shell.run("/usr/bin/ssh", args, stdin: stdin, timeout: max(timeout ?? 0, 120))
         case .password(let secret):
             return try await Askpass.withSecret(secret) { env in
-                try await Shell.run("/usr/bin/ssh", args, environment: env, stdin: stdin, timeout: 45)
+                try await Shell.run("/usr/bin/ssh", args, environment: env, stdin: stdin, timeout: timeout ?? 45)
             }
         }
     }

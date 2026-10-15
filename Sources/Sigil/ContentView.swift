@@ -66,6 +66,11 @@ struct ContentView: View {
         .sheet(isPresented: $router.showingEmergency) {
             EmergencyRotateSheet()
         }
+        .sheet(item: $router.maintenance) { request in
+            if let server = model.server(request.serverID) {
+                MaintenanceSheet(server: server, kind: request.kind)
+            }
+        }
         .sheet(isPresented: $router.showingActions) {
             ActionsSheet()
         }
@@ -245,6 +250,8 @@ struct ContentView: View {
             .contextMenu {
                 Button("Bağlan") { router.connect(s) }
                 Button("Bağlantıyı Test Et") { Task { await model.checkStatus(s.id, interactive: true) } }
+                Button("Sunucuyu Güncelle…") { router.maintenance = .init(serverID: s.id, kind: .update) }
+                Button("Yeniden Başlat…") { router.maintenance = .init(serverID: s.id, kind: .reboot) }
                 Divider()
                 Button("“ssh \(s.alias)” Kopyala") { Links.copy("ssh \(s.alias)") }
             }

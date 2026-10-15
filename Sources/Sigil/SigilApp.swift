@@ -16,6 +16,8 @@ final class AppRouter {
     var showingImport = false
     var showingEmergency = false
     var showingActions = false
+    /// Update / restart sheet for a server.
+    var maintenance: MaintenanceRequest?
     /// Waiting for "yes, connect to production".
     var pendingProductionConnect: Server?
     /// Production servers the user already confirmed in this app session.
@@ -40,6 +42,21 @@ final class AppRouter {
         }
         Haptics.tap()
     }
+
+    /// Runs a command on the server in an in-app terminal tab (ssh -t), so the user watches it and can answer prompts.
+    func runInTerminal(_ server: Server, command: String, title: String) {
+        terminals.open(server, command: command, title: title)
+        selection = server.id
+        mode = .terminal
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+struct MaintenanceRequest: Identifiable {
+    enum Kind { case update, reboot }
+    let serverID: UUID
+    let kind: Kind
+    var id: String { "\(serverID)-\(kind)" }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
