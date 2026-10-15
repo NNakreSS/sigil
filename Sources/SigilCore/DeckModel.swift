@@ -61,6 +61,8 @@ public final class DeckModel {
         if !servers.isEmpty {
             _ = try? config.ensureInclude()
             writeConfig()
+            let keychainKeys = servers.filter { $0.store == .keychain }.map(\.keyFileName)
+            if !keychainKeys.isEmpty { Task { await keys.unloadFromAgent(fileNames: keychainKeys) } }
         }
     }
 

@@ -283,3 +283,23 @@ final class MetadataTests: XCTestCase {
         XCTAssertNil(model.server(s.id)!.group)
     }
 }
+
+/// Sigil keys must never pile up in the ssh-agent: an agent offering many keys makes every other ssh connection
+/// fail with "Too many authentication failures" before a password is even asked.
+final class AgentHygieneTests: XCTestCase {
+    func testKeychainKeysBypassTheAgent() throws {
+        let box = try Sandbox()
+        let s = Server(alias: "web", host: "203.0.113.7", port: 22, user: "deploy", keyFileName: "k1",
+                       publicKeyBlob: "AAAAC3NzaC1lZDI1NTE5AAAAIabc", keyFingerprint: "SHA256:x")
+        let text = ConfigManager(paths: box.paths).render([s])
+        XCTAssertTrue(text.contains("IdentityAgent none"))
+        XCTAssertTrue(text.contains("UseKeychain yes"), "the passphrase still comes from the Keychain")
+        XCTAssertFalse(text.contains("AddKeysToAgent"))
+
+        let args = RemoteService(paths: box.paths, useKeychain: true)
+            .arguments(for: RemoteTarget(host: "203.0.113.7", port: 22, user: "deploy"), auth: .key(fileName: "k1"), command: "true")
+            .joined(separator: " ")
+        XCTAssertTrue(args.contains("IdentityAgent=none"))
+        XCTAssertFalse(args.contains("AddKeysToAgent"))
+    }
+}

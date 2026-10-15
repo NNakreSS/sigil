@@ -16,7 +16,9 @@ public struct KeyMaterial: Sendable {
 /// Creates and removes per-server ed25519 keys.
 ///
 /// In production every key gets its own random passphrase, which is stored only in the macOS Keychain
-/// (via `ssh-add --apple-use-keychain`); ssh finds it there with `UseKeychain yes`. Tests turn this off.
+/// (via `ssh-add --apple-use-keychain`); ssh finds it there with `UseKeychain yes`. The key itself is taken straight
+/// back out of the agent: an agent holding many keys makes every other ssh connection fail with "Too many
+/// authentication failures". Tests turn this off.
 public struct KeyService: Sendable {
     let paths: DeckPaths
     let protectWithKeychain: Bool
@@ -45,6 +47,8 @@ public struct KeyService: Sendable {
                     try? fm.removeItem(at: url.appendingPathExtension("pub"))
                     throw DeckError.keyGeneration("Anahtar Keychain’e eklenemedi: \(add.stderr.trimmed)")
                 }
+                // Plain -d (without --apple-use-keychain) unloads the key and keeps its passphrase in the Keychain.
+                _ = try? await Shell.run("/usr/bin/ssh-add", ["-d", url.path], timeout: 15)
             }
         } else {
             args += ["-N", ""]
@@ -65,6 +69,14 @@ public struct KeyService: Sendable {
             fileName: fileName, privateKeyURL: url, publicKeyLine: pub, blob: blob,
             fingerprint: Fingerprint.sha256(ofBase64: blob) ?? ""
         )
+    }
+
+    /// Takes keys out of the ssh-agent that older Sigil versions left there (their passphrases stay in the Keychain).
+    public func unloadFromAgent(fileNames: [String]) async {
+        guard protectWithKeychain else { return }
+        for name in fileNames where FileManager.default.fileExists(atPath: paths.keyURL(name).path) {
+            _ = try? await Shell.run("/usr/bin/ssh-add", ["-d", paths.keyURL(name).path], timeout: 10)
+        }
     }
 
     /// Removes the key files, and the key + its passphrase from ssh-agent / Keychain.

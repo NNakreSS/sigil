@@ -205,7 +205,8 @@ public struct RemoteService: Sendable {
                 "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
                 "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
             ]
-            if useKeychain { a += ["-o", "UseKeychain=yes", "-o", "AddKeysToAgent=yes"] }
+            a += ["-o", "IdentityAgent=none"]
+            if useKeychain { a += ["-o", "UseKeychain=yes"] }
         case .agent(let publicKeyFile, let socket):
             a += [
                 "-i", paths.keyURL(publicKeyFile).appendingPathExtension("pub").path,

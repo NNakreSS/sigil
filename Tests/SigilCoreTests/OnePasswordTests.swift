@@ -253,7 +253,7 @@ final class OnePasswordFlowTests: XCTestCase {
         let op1 = cfg.components(separatedBy: "Host op1")[1].components(separatedBy: "Host ")[0]
         let kc1 = cfg.components(separatedBy: "Host kc1")[1].components(separatedBy: "Host ")[0]
         XCTAssertTrue(op1.contains("IdentityAgent \"\(fake.socket)\""))
-        XCTAssertTrue(kc1.contains("IdentityAgent SSH_AUTH_SOCK"))
+        XCTAssertTrue(kc1.contains("IdentityAgent none"))
         XCTAssertTrue(kc1.contains("UseKeychain yes"))
         let r1 = try await sshAlias(box, "op1"); XCTAssertTrue(r1.succeeded, r1.stderr)
         let r2 = try await sshAlias(box, "kc1"); XCTAssertTrue(r2.succeeded, r2.stderr)

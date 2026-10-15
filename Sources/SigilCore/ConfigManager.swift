@@ -16,9 +16,10 @@ public struct ConfigManager: Sendable {
             out += "  HostName \(s.host)\n  User \(s.user)\n  Port \(s.port)\n"
             switch s.store {
             case .keychain:
-                // Explicit agent so a later global `IdentityAgent` (e.g. 1Password's) does not change this host.
+                // ssh reads the passphrase straight from the Keychain; the key never enters an agent, so other ssh
+                // connections are not offered a pile of Sigil keys ("Too many authentication failures").
                 out += "  IdentityFile \(paths.keyURL(s.keyFileName).path)\n"
-                out += "  IdentitiesOnly yes\n  IdentityAgent SSH_AUTH_SOCK\n  AddKeysToAgent yes\n  UseKeychain yes\n"
+                out += "  IdentitiesOnly yes\n  IdentityAgent none\n  UseKeychain yes\n"
             case .onePassword:
                 // Public key pins the 1Password key for this host; the private key stays in 1Password.
                 out += "  IdentityFile \(paths.keyURL(s.keyFileName).appendingPathExtension("pub").path)\n"
