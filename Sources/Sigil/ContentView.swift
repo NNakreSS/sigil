@@ -2,6 +2,7 @@ import SigilCore
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.openWindow) private var openWindow
     @Environment(DeckModel.self) private var model
     @Environment(AppRouter.self) private var router
     @Environment(TerminalSessions.self) private var terminals
@@ -69,10 +70,11 @@ struct ContentView: View {
         .sheet(item: Binding(get: { router.tourPage.map { TourPageID(page: $0) } }, set: { router.tourPage = $0?.page })) { t in
             TourSheet(page: t.page)
         }
-        .sheet(item: $router.panel) { request in
-            if let server = model.server(request.serverID) {
-                ServerPanelSheet(server: server, kind: request.kind)
-            }
+        // Files and Docker open in their own windows, so they can sit next to the terminal.
+        .onChange(of: router.panel) { _, request in
+            guard let request else { return }
+            openWindow(id: "panel", value: request)
+            router.panel = nil
         }
         .sheet(item: $router.maintenance) { request in
             if let server = model.server(request.serverID) {

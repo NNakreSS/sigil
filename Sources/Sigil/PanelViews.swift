@@ -3,11 +3,18 @@ import SigilCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct PanelRequest: Identifiable {
-    enum Kind { case files, docker }
+struct PanelRequest: Identifiable, Codable, Hashable {
+    enum Kind: String, Codable, Hashable { case files, docker }
     let serverID: UUID
     let kind: Kind
     var id: String { "\(serverID)-\(kind)" }
+}
+
+/// Text shown in its own window (file preview, container logs); a new id opens a new window.
+struct TextPreview: Codable, Hashable {
+    var id = UUID()
+    let title: String
+    let text: String
 }
 
 /// Files or Docker for one server, over one shared connection (one Touch ID), closed with the panel.
@@ -54,8 +61,9 @@ struct ServerPanelSheet: View {
                 }
             }
         }
-        .frame(minWidth: 860, idealWidth: 960, minHeight: 560, idealHeight: 660)
-        .background(Color.parchment)
+        .frame(minWidth: 760, minHeight: 480)
+        .background(WindowBackdrop())
+        .navigationTitle("\(server.alias) · \(kind == .files ? "Dosyalar" : "Docker")")
         .task { await connect() }
         .onDisappear { model.closeSession(server.id) }
     }
@@ -74,7 +82,7 @@ struct ServerPanelSheet: View {
 private struct FileBrowser: View {
     @Environment(DeckModel.self) private var model
     @Environment(AppRouter.self) private var router
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     let server: Server
 
     @State private var path = "~"
@@ -86,7 +94,6 @@ private struct FileBrowser: View {
     @State private var loading = false
     @State private var status: String?
     @State private var error: String?
-    @State private var preview: (name: String, text: String)?
     @State private var renaming: RemoteFile?
     @State private var newName = ""
     @State private var deleting: RemoteFile?
@@ -104,9 +111,6 @@ private struct FileBrowser: View {
             statusBar
         }
         .task { await load("~") }
-        .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { preview = nil } })) {
-            if let preview { PreviewSheet(name: preview.name, text: preview.text) }
-        }
         .alert("Yeniden adlandır", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Yeni ad", text: $newName)
             Button("Vazgeç", role: .cancel) { renaming = nil }
@@ -260,7 +264,7 @@ private struct FileBrowser: View {
             if f.size > 262_144 {
                 status = "Dosya büyük (\(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file))); ilk 256 KB gösteriliyor."
             }
-            do { preview = (f.name, try await model.readFile(server.id, f.path)) }
+            do { openWindow(id: "preview", value: TextPreview(title: "\(server.alias) · \(f.path)", text: try await model.readFile(server.id, f.path))) }
             catch { self.error = error.localizedDescription }
         case .other: break
         }
@@ -329,32 +333,43 @@ private struct FileBrowser: View {
 
     private func openTerminalHere() {
         let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        dismiss()
+        openWindow(id: "main")
         router.runInTerminal(server, command: "cd \(quoted) && exec \"${SHELL:-/bin/sh}\" -l", title: (path as NSString).lastPathComponent)
     }
 }
 
-private struct PreviewSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let name: String
-    let text: String
+/// A movable, resizable window for text: wraps long lines by default, adjustable size, copy.
+struct PreviewWindow: View {
+    let preview: TextPreview
+    @AppStorage("previewWrap") private var wrap = true
+    @AppStorage("previewFontSize") private var size = 12.0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Label(name, systemImage: "doc.text").font(.engraved(15))
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.text").foregroundStyle(Color.accentInk)
+                Text(preview.title).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
                 Spacer()
-                Button { Links.copy(text) } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).help("Kopyala")
-                Button("Kapat") { dismiss() }.keyboardShortcut(.cancelAction)
+                Toggle("Satırları kaydır", isOn: $wrap).toggleStyle(.checkbox)
+                Stepper(value: $size, in: 9...22) { Text("\(Int(size)) pt").monospacedDigit() }
+                Button { Links.copy(preview.text) } label: { Label("Kopyala", systemImage: "doc.on.doc") }
+                    .buttonStyle(GlassButtonStyle())
             }
-            .padding(12)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
-            ScrollView([.vertical, .horizontal]) {
-                Text(text.isEmpty ? "(boş dosya)" : text).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            ScrollView(wrap ? [.vertical] : [.vertical, .horizontal]) {
+                Text(preview.text.isEmpty ? "(boş)" : preview.text)
+                    .font(.system(size: size, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: !wrap, vertical: false)
+                    .frame(maxWidth: wrap ? .infinity : nil, alignment: .leading)
+                    .padding(14)
             }
+            .background(Color.vellum)
         }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 480, minHeight: 320)
+        .background(WindowBackdrop())
+        .navigationTitle(preview.title)
     }
 }
 
@@ -363,7 +378,7 @@ private struct PreviewSheet: View {
 private struct DockerPanel: View {
     @Environment(DeckModel.self) private var model
     @Environment(AppRouter.self) private var router
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     let server: Server
 
     @State private var containers: [DockerContainer] = []
@@ -372,7 +387,6 @@ private struct DockerPanel: View {
     @State private var working: String?
     @State private var autoRefresh = true
     @State private var confirm: (container: DockerContainer, verb: String)?
-    @State private var logs: (name: String, text: String)?
 
     private var groups: [(String, [DockerContainer])] {
         Dictionary(grouping: containers) { $0.project ?? "" }
@@ -426,9 +440,6 @@ private struct DockerPanel: View {
         } message: { c in
             Text(c.verb == "rm" ? "Container silinir; içindeki ve volume’a yazılmamış veriler gider." : "Bu container’daki servis kısa süre kesilir.")
         }
-        .sheet(isPresented: Binding(get: { logs != nil }, set: { if !$0 { logs = nil } })) {
-            if let logs { PreviewSheet(name: "\(logs.name) · son 300 satır", text: logs.text) }
-        }
     }
 
     private var confirmTitle: String {
@@ -471,11 +482,11 @@ private struct DockerPanel: View {
             HStack(spacing: 2) {
                 icon("doc.text.magnifyingglass", "Son loglar") { Task { await showLogs(c) } }
                 icon("dot.radiowaves.left.and.right", "Canlı log (terminalde)") {
-                    dismiss(); router.runInTerminal(server, command: "docker logs -f --tail 100 \(c.name) || sudo docker logs -f --tail 100 \(c.name)", title: c.name)
+                    openWindow(id: "main"); router.runInTerminal(server, command: "docker logs -f --tail 100 \(c.name) || sudo docker logs -f --tail 100 \(c.name)", title: c.name)
                 }
                 if c.isRunning {
                     icon("chevron.left.forwardslash.chevron.right", "Container içinde kabuk (terminalde)") {
-                        dismiss(); router.runInTerminal(server, command: "docker exec -it \(c.name) sh -c \"command -v bash >/dev/null && exec bash || exec sh\"", title: c.name)
+                        openWindow(id: "main"); router.runInTerminal(server, command: "docker exec -it \(c.name) sh -c \"command -v bash >/dev/null && exec bash || exec sh\"", title: c.name)
                     }
                     icon("arrow.clockwise", "Yeniden başlat") { ask(c, "restart") }
                     icon("stop.fill", "Durdur") { ask(c, "stop") }
@@ -518,7 +529,7 @@ private struct DockerPanel: View {
     private func showLogs(_ c: DockerContainer) async {
         working = c.name
         defer { working = nil }
-        do { logs = (c.name, try await model.dockerLogs(server.id, container: c.name)) }
+        do { openWindow(id: "preview", value: TextPreview(title: "\(server.alias) · \(c.name) · son 300 satır", text: try await model.dockerLogs(server.id, container: c.name))) }
         catch { self.error = error.localizedDescription }
     }
 }

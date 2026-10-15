@@ -142,6 +142,25 @@ struct SigilApp: App {
             }
         }
 
+        WindowGroup("Sunucu", id: "panel", for: PanelRequest.self) { $request in
+            if let request, let server = model.server(request.serverID) {
+                ServerPanelSheet(server: server, kind: request.kind)
+                    .environment(model)
+                    .environment(router)
+                    .environment(router.terminals)
+                    .environment(\.locale, trLocale)
+                    .tint(Color.accentInk)
+            }
+        }
+        .defaultSize(width: 980, height: 680)
+
+        WindowGroup("Önizleme", id: "preview", for: TextPreview.self) { $preview in
+            if let preview {
+                PreviewWindow(preview: preview).tint(Color.accentInk)
+            }
+        }
+        .defaultSize(width: 820, height: 600)
+
         MenuBarExtra(isInserted: $showMenuBarIcon) {
             MenuBarView()
                 .environment(model)
