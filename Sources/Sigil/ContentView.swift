@@ -71,6 +71,7 @@ struct ContentView: View {
             TourSheet(page: t.page)
         }
         // Files and Docker open in their own windows, so they can sit next to the terminal.
+        .onAppear { AppLaunch.openMain = { [openWindow] in openWindow(id: "main") } }
         .onChange(of: router.panel) { _, request in
             guard let request else { return }
             openWindow(id: "panel", value: request)

@@ -39,7 +39,7 @@ struct TerminalFindBar: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .environment(\.colorScheme, TerminalTheme.colorScheme)
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(TerminalTheme.panelStroke))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .onAppear { focused = true }
         .onExitCommand { terminals.endFind() }
@@ -133,7 +133,7 @@ struct CommandPalette: View {
         .frame(width: 600)
         .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .environment(\.colorScheme, TerminalTheme.colorScheme)
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(TerminalTheme.panelStroke))
         .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         .onAppear { focused = true }
         .onExitCommand {
@@ -149,7 +149,7 @@ struct CommandPalette: View {
         let items = self.items
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "command").foregroundStyle(Color.accentInk)
+                Image(systemName: "command").foregroundStyle(TerminalTheme.accent)
                 TextField("Ne yapmak istiyorsun? (ör. disk, nginx log, port)", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
@@ -208,21 +208,21 @@ struct CommandPalette: View {
             }
             Spacer(minLength: 8)
             if item.changesSystem {
-                Text("değiştirir").font(.caption2.weight(.semibold)).foregroundStyle(Color.amberInk)
+                Text("değiştirir").font(.caption2.weight(.semibold)).foregroundStyle(TerminalTheme.warn)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.amberInk.opacity(0.12), in: Capsule())
+                    .background(TerminalTheme.warn.opacity(0.12), in: Capsule())
                     .help("Sunucuda bir şeyi değiştirir (yeniden başlatma, kurma, silme…)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(highlighted ? Color.accentInk.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(highlighted ? TerminalTheme.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
     }
 
     private func askRow(_ q: String, highlighted: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "sparkles").foregroundStyle(Color.accentInk)
+            Image(systemName: "sparkles").foregroundStyle(TerminalTheme.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Öner: “\(q)”").font(.callout.weight(.medium))
                 Text(AssistantSettings.shared.askSubtitle)
@@ -231,7 +231,7 @@ struct CommandPalette: View {
             Spacer()
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(highlighted ? Color.accentInk.opacity(0.18) : Color.accentInk.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        .background(highlighted ? TerminalTheme.accent.opacity(0.18) : TerminalTheme.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
     }
 
@@ -281,7 +281,7 @@ struct CommandPalette: View {
                         .onSubmit { if ReturnKey.pressed { finish(c, run: NSEvent.modifierFlags.contains(.command)) } }
                 }
             }
-            Text(c.filled(values)).font(.terminalSmall).foregroundStyle(Color.accentInk)
+            Text(c.filled(values)).font(.terminalSmall).foregroundStyle(TerminalTheme.accent)
                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
@@ -384,7 +384,7 @@ struct AssistantAnswerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles").foregroundStyle(Color.accentInk)
+                Image(systemName: "sparkles").foregroundStyle(TerminalTheme.accent)
                 Text(request).font(.engraved(16)).lineLimit(2)
                 Spacer()
             }
@@ -398,11 +398,11 @@ struct AssistantAnswerView: View {
                 Text(answer.explanation).font(.callout).fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 6) {
                     if answer.changesSystem {
-                        Chip(text: isProduction ? "Değiştirir · production" : "Sunucuda değişiklik yapar", systemImage: "exclamationmark.triangle", tint: .amberInk)
+                        Chip(text: isProduction ? "Değiştirir · production" : "Sunucuda değişiklik yapar", systemImage: "exclamationmark.triangle", tint: TerminalTheme.warn)
                     }
-                    ForEach(answer.warnings, id: \.self) { Chip(text: $0, systemImage: "questionmark.diamond", tint: .cinnabar) }
+                    ForEach(answer.warnings, id: \.self) { Chip(text: $0, systemImage: "questionmark.diamond", tint: TerminalTheme.bad) }
                     if answer.warnings.isEmpty && !answer.command.isEmpty {
-                        Chip(text: "Bilinen komutlar, sözdizimi geçerli", systemImage: "checkmark.seal", tint: .verdigris)
+                        Chip(text: "Bilinen komutlar, sözdizimi geçerli", systemImage: "checkmark.seal", tint: TerminalTheme.good)
                     }
                 }
                 Text("Deneysel öneri: çalıştırmadan önce oku. ⏎ komutu terminale yazar, çalıştırmaz.")
@@ -415,7 +415,7 @@ struct AssistantAnswerView: View {
                     Button("Terminale yaz") { type(command) }.buttonStyle(InkButtonStyle()).disabled(command.isEmpty)
                 }
             } else if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.cinnabar).font(.callout)
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(TerminalTheme.bad).font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Düşünüyor…").foregroundStyle(.secondary) }
@@ -447,54 +447,119 @@ struct ExplainPanel: View {
 
     @State private var answer: AssistantAnswer?
     @State private var error: String?
+    @State private var hoveringClose = false
 
     private var context: AssistantContext {
         AssistantContext(health: terminals.active.flatMap { model.server($0.serverID)?.health })
     }
+    private var selection: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("Açıkla", systemImage: "sparkles").font(.engraved(15)).foregroundStyle(Color.accentInk)
-                Spacer()
-                Button { terminals.explaining = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
-            }
-            Text(text.trimmingCharacters(in: .whitespacesAndNewlines)).font(.terminalSmall).foregroundStyle(.secondary)
-                .lineLimit(4).truncationMode(.tail)
-                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Önce terminalde açıklanacak metni (ör. bir hata satırını) fareyle seç, sonra ⇧⌘E’ye bas.")
-                    .font(.callout).fixedSize(horizontal: false, vertical: true)
-            } else if let answer {
-                Text(answer.explanation).font(.callout).fixedSize(horizontal: false, vertical: true)
-                if !answer.command.isEmpty {
-                    HStack {
-                        Text(answer.command).font(.terminalSmall).textSelection(.enabled).lineLimit(2)
-                        Spacer()
-                        Button("Terminale yaz") { terminals.explaining = nil; terminals.type(answer.command, run: false) }
-                            .controlSize(.small)
-                    }
-                    .padding(8)
-                    .background(Color.accentInk.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-                    ForEach(answer.warnings, id: \.self) { Label($0, systemImage: "questionmark.diamond").font(.caption).foregroundStyle(Color.cinnabar) }
-                }
-                Text(AssistantSettings.shared.sourceLabel).font(.caption2).foregroundStyle(.tertiary)
-            } else if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.cinnabar).font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            if selection.isEmpty {
+                emptyState
             } else {
-                HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Okuyor…").foregroundStyle(.secondary) }
+                quote
+                if let answer {
+                    Text(answer.explanation).font(.callout).foregroundStyle(TerminalTheme.text)
+                        .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
+                    if !answer.command.isEmpty { suggestion(answer) }
+                    Text(AssistantSettings.shared.sourceLabel).font(.caption2).foregroundStyle(TerminalTheme.muted)
+                } else if let error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(TerminalTheme.bad).font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Okuyor…").foregroundStyle(TerminalTheme.muted)
+                    }
+                }
             }
         }
-        .padding(14)
-        .frame(width: 420)
-        .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(18)
+        .frame(width: 440)
+        .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(TerminalTheme.panelStroke))
+        .overlay(alignment: .top) {
+            // A thin line of the accent along the top edge.
+            Capsule().fill(TerminalTheme.accent).frame(height: 2).padding(.horizontal, 22).offset(y: -1)
+        }
+        .shadow(color: .black.opacity(TerminalTheme.isLight ? 0.15 : 0.45), radius: 22, y: 10)
         .environment(\.colorScheme, TerminalTheme.colorScheme)
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
-        .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
         .onExitCommand { terminals.explaining = nil }
         .task(id: text) { await load() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(TerminalTheme.accent.opacity(0.18)).frame(width: 30, height: 30)
+                Image(systemName: "sparkles").font(.system(size: 13, weight: .semibold)).foregroundStyle(TerminalTheme.accent)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Açıkla").font(.headline).foregroundStyle(TerminalTheme.text)
+                Text("Seçili terminal metni ne anlama geliyor?").font(.caption).foregroundStyle(TerminalTheme.muted)
+            }
+            Spacer()
+            Button { terminals.explaining = nil } label: {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(hoveringClose ? TerminalTheme.text : TerminalTheme.muted)
+                    .frame(width: 24, height: 24)
+                    .background(TerminalTheme.text.opacity(hoveringClose ? 0.12 : 0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hoveringClose = $0 }
+            .help("Kapat (esc)")
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Önce açıklanacak metni seç").font(.callout.weight(.semibold)).foregroundStyle(TerminalTheme.text)
+            HStack(spacing: 8) {
+                step("1", "Bir hata satırını fareyle seç")
+                Image(systemName: "arrow.right").font(.caption).foregroundStyle(TerminalTheme.muted)
+                step("2", "⇧⌘E")
+            }
+        }
+    }
+
+    private func step(_ n: String, _ text: String) -> some View {
+        HStack(spacing: 6) {
+            Text(n).font(.caption2.weight(.bold)).foregroundStyle(TerminalTheme.panel)
+                .frame(width: 16, height: 16).background(TerminalTheme.accent, in: Circle())
+            Text(text).font(.caption.weight(.medium)).foregroundStyle(TerminalTheme.text)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(TerminalTheme.text.opacity(0.07), in: Capsule())
+    }
+
+    private var quote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1.5).fill(TerminalTheme.accent).frame(width: 3)
+            Text(selection).font(.system(size: 12, design: .monospaced)).foregroundStyle(TerminalTheme.muted)
+                .lineLimit(4).truncationMode(.tail)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func suggestion(_ answer: AssistantAnswer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text(answer.command).font(.system(size: 12, design: .monospaced)).foregroundStyle(TerminalTheme.text)
+                    .textSelection(.enabled).lineLimit(3)
+                Spacer(minLength: 8)
+                Button("Terminale yaz") { terminals.explaining = nil; terminals.type(answer.command, run: false) }
+                    .buttonStyle(.borderedProminent).tint(TerminalTheme.accent).controlSize(.small)
+            }
+            .padding(10)
+            .background(TerminalTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(TerminalTheme.accent.opacity(0.35)))
+            ForEach(answer.warnings, id: \.self) {
+                Label($0, systemImage: "questionmark.diamond").font(.caption).foregroundStyle(TerminalTheme.warn)
+            }
+        }
     }
 
     private func load() async {

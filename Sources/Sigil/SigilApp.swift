@@ -68,6 +68,15 @@ struct MaintenanceRequest: Identifiable {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Keep running in the menu bar after the window is closed so scheduled checks and rotations continue.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Clicking the Dock icon brings the main window back after ⌘W, also when only a files or preview window is open.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainActor.assumeIsolated {
+            let mainVisible = sender.windows.contains { $0.isVisible && ($0.identifier?.rawValue.hasPrefix("main") ?? false) }
+            if !mainVisible { AppLaunch.openMain?() }
+        }
+        return true
+    }
 }
 
 @main
@@ -260,6 +269,8 @@ struct SigilApp: App {
 enum AppLaunch {
     static var started = false
     static var appearanceObservation: NSObjectProtocol?
+    /// Opens (or brings forward) the main window; set by the main window itself, used by the Dock icon.
+    static var openMain: (() -> Void)?
 }
 
 /// Menu bar icon drawn from the brand sigil (template image, so it follows the menu bar's colour). When something

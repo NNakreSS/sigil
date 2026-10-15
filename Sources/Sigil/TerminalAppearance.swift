@@ -138,6 +138,17 @@ enum TerminalTheme {
     /// translucent material that would pick up the app's light or dark look.
     static var panel: Color { Color(nsColor: background.blended(withFraction: p.isLight ? 0.04 : 0.10, of: p.isLight ? .black : .white) ?? background) }
     static var colorScheme: ColorScheme { p.isLight ? .light : .dark }
+
+    // Semantic colours for panels over the terminal, taken from the terminal's own (bright, on dark) ANSI colours so
+    // they always contrast with it, whatever the app theme is.
+    private static func ansiColor(_ dark: Int, _ light: Int) -> Color { Color(nsColor: TerminalPalette.color(p.ansi[p.isLight ? light : dark])) }
+    static var accent: Color { ansiColor(12, 4) }
+    static var good: Color { ansiColor(10, 2) }
+    static var warn: Color { ansiColor(11, 3) }
+    static var bad: Color { ansiColor(9, 1) }
+    static var text: Color { Color(nsColor: foreground) }
+    static var muted: Color { Color(nsColor: foreground).opacity(0.62) }
+    static var panelStroke: Color { Color(nsColor: foreground).opacity(p.isLight ? 0.14 : 0.16) }
     static var ansi: [(UInt16, UInt16, UInt16)] {
         p.ansi.map { (UInt16(($0 >> 16) & 0xFF), UInt16(($0 >> 8) & 0xFF), UInt16($0 & 0xFF)) }
     }
