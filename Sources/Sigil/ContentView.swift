@@ -197,12 +197,18 @@ struct ContentView: View {
         }
     }
 
+    /// The store new servers will use; read from settings, so it never makes 1Password show a prompt.
+    private var sidebarStoreLabel: String {
+        let preferred = KeyStoreKind(rawValue: UserDefaults.standard.string(forKey: "defaultKeyStore") ?? "") ?? .preferredDefault
+        return "Varsayılan: " + KeyStoreKind.usable(preferred, onePasswordReady: model.onePasswordStatus.isReady).title
+    }
+
     private var sidebarFooter: some View {
         HStack(spacing: 8) {
             SigilMark(geometry: .brand, size: 18)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Sigil").font(.engraved(12))
-                Text(model.onePasswordStatus.isReady ? "1Password bağlı" : "Keychain modu")
+                Text(sidebarStoreLabel)
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()

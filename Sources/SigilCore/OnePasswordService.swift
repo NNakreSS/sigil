@@ -4,14 +4,16 @@ public struct OnePasswordStatus: Sendable, Equatable {
     public var appInstalled = false
     public var cliPath: String?
     public var cliVersion: String?
-    /// `op` can reach the desktop app (Settings → Developer → Integrate with 1Password CLI).
-    public var cliIntegrationWorks = false
+    /// `op` can reach the desktop app (Settings → Developer → Integrate with 1Password CLI). nil = not checked: checking
+    /// makes 1Password ask the user to authorize `op`, so it only happens when the user asks for it.
+    public var cliIntegrationWorks: Bool?
     /// The SSH agent socket exists (Settings → Developer → Use the SSH Agent).
     public var agentRunning = false
 
     public init() {}
 
-    public var isReady: Bool { cliPath != nil && cliIntegrationWorks && agentRunning }
+    /// Everything that can be seen without asking 1Password is in place, and the integration is not known to be off.
+    public var isReady: Bool { cliPath != nil && cliIntegrationWorks != false && agentRunning }
 }
 
 /// 1Password as a key store, through the `op` CLI and the 1Password SSH agent.
@@ -51,14 +53,18 @@ public struct OnePasswordService: Sendable {
 
     // MARK: Status
 
-    /// Cheap checks only; nothing here asks the user to approve anything.
-    public func status() async -> OnePasswordStatus {
+    /// Without `verifyIntegration` these are local checks only and 1Password shows nothing. With it, `op account list`
+    /// runs, and 1Password asks the user to authorize the CLI (account-wide, as 1Password scopes it) — so that is only
+    /// done when the user presses "check" in setup.
+    public func status(verifyIntegration: Bool = false) async -> OnePasswordStatus {
         var s = OnePasswordStatus()
         s.appInstalled = FileManager.default.fileExists(atPath: "/Applications/1Password.app")
         s.agentRunning = FileManager.default.fileExists(atPath: socketPath)
         guard let cliPath else { return s }
         s.cliPath = cliPath
         if let v = try? await op(["--version"], timeout: 15), v.succeeded { s.cliVersion = v.stdout.trimmed }
+        guard verifyIntegration else { return s }
+        s.cliIntegrationWorks = false
         if let r = try? await op(["account", "list", "--format", "json"], timeout: 30), r.succeeded,
            let data = r.stdout.data(using: .utf8),
            let accounts = try? JSONSerialization.jsonObject(with: data) as? [Any] {

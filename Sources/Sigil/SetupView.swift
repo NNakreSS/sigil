@@ -57,19 +57,21 @@ struct SetupView: View {
                                       fix: "1Password for Mac’i kur.", action: ("İndir", { Links.openURL("https://1password.com/downloads/mac") }))
                                 check(status.cliPath != nil, "1Password CLI (op)" + (status.cliVersion.map { " · \($0)" } ?? ""),
                                       fix: "Terminalde çalıştır:", command: "brew install 1password-cli")
-                                check(status.cliIntegrationWorks, "CLI entegrasyonu",
-                                      fix: "1Password → Settings → Developer → “Integrate with 1Password CLI”.",
+                                check(status.cliIntegrationWorks == true, "CLI entegrasyonu",
+                                      fix: status.cliIntegrationWorks == nil
+                                          ? "1Password → Settings → Developer → “Integrate with 1Password CLI”. Sonra “Kontrol Et”e bas; 1Password, Sigil’in op aracına izin vermeni ister."
+                                          : "1Password → Settings → Developer → “Integrate with 1Password CLI”.",
                                       action: ("1Password’ü Aç", Links.open1Password))
                                 check(status.agentRunning, "SSH Agent",
                                       fix: "1Password → Settings → Developer → “Use the SSH Agent”.",
                                       action: ("1Password’ü Aç", Links.open1Password))
                                 HStack {
                                     Button {
-                                        Task { checking = true; await model.refreshOnePasswordStatus(); checking = false }
+                                        Task { checking = true; await model.refreshOnePasswordStatus(verifyIntegration: true); checking = false }
                                     } label: {
-                                        if checking { ProgressView().controlSize(.small) } else { Label("Tekrar Kontrol Et", systemImage: "arrow.clockwise") }
+                                        if checking { ProgressView().controlSize(.small) } else { Label("Kontrol Et", systemImage: "arrow.clockwise") }
                                     }
-                                    if status.isReady {
+                                    if status.isReady && status.cliIntegrationWorks == true {
                                         Label("Hazır", systemImage: "checkmark.seal.fill").foregroundStyle(Color.verdigris)
                                             .transition(.scale.combined(with: .opacity))
                                     }

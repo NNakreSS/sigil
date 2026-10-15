@@ -64,8 +64,11 @@ public final class DeckModel {
         }
     }
 
-    public func refreshOnePasswordStatus() async {
-        onePasswordStatus = await onePassword.status()
+    /// - Parameter verifyIntegration: also run `op`, which makes 1Password ask for authorization. Only on user request.
+    public func refreshOnePasswordStatus(verifyIntegration: Bool = false) async {
+        var s = await onePassword.status(verifyIntegration: verifyIntegration)
+        if !verifyIntegration { s.cliIntegrationWorks = onePasswordStatus.cliIntegrationWorks }   // keep what we learned
+        onePasswordStatus = s
     }
 
     /// Secure Enclave where supported, else 1Password when it is fully set up, otherwise the Keychain.
