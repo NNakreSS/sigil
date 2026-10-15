@@ -9,3 +9,4 @@ dist/
 *.p8
 *.cer
 sparkle_private*
+scripts/test-server/.env
