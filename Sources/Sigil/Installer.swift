@@ -13,11 +13,16 @@ enum Installer {
         return path.hasPrefix("/Applications/") || path.hasPrefix(user + "/")
     }
 
+    /// Local builds (scripts/make-app.sh without VERSION) run from build/ and must not replace the installed release.
+    static var isDevelopmentBuild: Bool {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)?.hasSuffix("-dev") == true
+    }
+
     /// Call once at launch.
     static func run() {
         guard Platform.isBundled else { return }
         ejectIfAsked()
-        guard !isInApplications else { return }
+        guard !isInApplications, !isDevelopmentBuild else { return }
 
         let fromDMG = Bundle.main.bundleURL.path.hasPrefix("/Volumes/")
         let alert = NSAlert()

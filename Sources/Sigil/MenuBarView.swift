@@ -6,6 +6,7 @@ struct MenuBarView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @EnvironmentObject private var updater: UpdaterModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -17,7 +18,7 @@ struct MenuBarView: View {
                 }
                 Spacer()
                 Button {
-                    Task { await model.checkAll() }
+                    Task { await model.checkAll(interactive: true) }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -107,6 +108,22 @@ struct MenuBarView: View {
             }
             .buttonStyle(.borderless)
             .padding(12)
+
+            Divider()
+            HStack {
+                Text("Sigil \(Platform.shortVersion)").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if updater.isAvailable {
+                    Button("Güncellemeleri Denetle…") {
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        updater.checkForUpdates()
+                    }
+                    .font(.caption)
+                    .disabled(!updater.canCheckForUpdates)
+                }
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
         .frame(width: 310)
     }

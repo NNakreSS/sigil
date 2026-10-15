@@ -7,6 +7,12 @@ import UserNotifications
 enum Platform {
     static var isBundled: Bool { Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app" }
 
+    /// "0.1.2", or "geliştirme" for local builds.
+    static var shortVersion: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "geliştirme"
+        return short.hasSuffix("-dev") ? "geliştirme" : short
+    }
+
     static var version: String {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "geliştirme"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"

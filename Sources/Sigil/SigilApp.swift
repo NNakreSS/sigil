@@ -68,6 +68,7 @@ struct SigilApp: App {
                 .environment(model)
                 .environment(router)
                 .environment(router.terminals)
+                .environmentObject(updater)
                 .environment(\.locale, trLocale)
                 .frame(minWidth: 920, minHeight: 600)
                 .tint(Color.accentInk)
@@ -115,6 +116,7 @@ struct SigilApp: App {
             MenuBarView()
                 .environment(model)
                 .environment(router)
+                .environmentObject(updater)
                 .environment(\.locale, trLocale)
         } label: {
             Image(nsImage: MenuBarIcon.image(attention: needsAttention))

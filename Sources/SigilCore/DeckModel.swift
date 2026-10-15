@@ -490,10 +490,11 @@ public final class DeckModel {
         }
     }
 
-    public func checkAll() async {
+    /// - Parameter interactive: the user pressed a button, so servers that need Touch ID are checked too.
+    public func checkAll(interactive: Bool = false) async {
         await withTaskGroup(of: Void.self) { group in
             for id in servers.map(\.id) {
-                group.addTask { await self.checkStatus(id) }
+                group.addTask { await self.checkStatus(id, interactive: interactive) }
             }
         }
     }

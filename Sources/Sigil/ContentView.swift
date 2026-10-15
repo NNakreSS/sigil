@@ -5,6 +5,8 @@ struct ContentView: View {
     @Environment(DeckModel.self) private var model
     @Environment(AppRouter.self) private var router
     @Environment(TerminalSessions.self) private var terminals
+    @EnvironmentObject private var updater: UpdaterModel
+    @Environment(\.openSettings) private var openSettings
     @State private var search = ""
     @State private var collapsed: Set<String> = []
 
@@ -180,7 +182,7 @@ struct ContentView: View {
                 .disabled(model.servers.isEmpty)
 
                 Button {
-                    Task { await model.checkAll() }
+                    Task { await model.checkAll(interactive: true) }
                 } label: {
                     Label("Hepsini denetle", systemImage: "arrow.clockwise")
                 }
@@ -207,18 +209,31 @@ struct ContentView: View {
         HStack(spacing: 8) {
             SigilMark(geometry: .brand, size: 18)
             VStack(alignment: .leading, spacing: 0) {
-                Text("Sigil").font(.engraved(12))
+                HStack(spacing: 5) {
+                    Text("Sigil").font(.engraved(12))
+                    Text(Platform.shortVersion).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
                 Text(sidebarStoreLabel)
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            Button {
-                router.showingSetup = true
+            Menu {
+                Button("Ayarlar…") { openSettings() }
+                Button("Kurulum…") { router.showingSetup = true }
+                Divider()
+                if updater.isAvailable {
+                    CheckForUpdatesButton(updater: updater)
+                } else {
+                    Text("Geliştirme sürümü: güncelleme kapalı")
+                }
+                Text("Sürüm \(Platform.version)")
             } label: {
-                Image(systemName: "slider.horizontal.3")
+                Image(systemName: "gearshape")
             }
-            .buttonStyle(.borderless)
-            .help("Kurulum")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Ayarlar, kurulum ve güncellemeler")
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
         .background(.bar)
