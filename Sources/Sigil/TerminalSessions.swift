@@ -107,6 +107,8 @@ struct TerminalWorkspaceView: View {
                 if let s = terminals.active {
                     TerminalHost(session: s, configFile: terminals.configFile)
                         .id("\(s.id.uuidString)-\(s.generation)")
+                        // Breathing room from the sidebar and tab strip; the ZStack fills it with the terminal colour.
+                        .padding(.leading, 16).padding(.trailing, 8).padding(.top, 10).padding(.bottom, 8)
                         .overlay {
                             if s.exited { exitedOverlay(s) }
                         }
