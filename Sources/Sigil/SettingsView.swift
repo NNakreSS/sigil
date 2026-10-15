@@ -103,9 +103,11 @@ private struct TerminalSettings: View {
                 Toggle("Yazarken komut öner, Tab ile tamamla", isOn: $appearance.suggestions)
             }
 
+            AssistantSettingsSection()
+
             Section("Kısayollar") {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("⌘P komut paleti · ⌘F bul · ⌘G sonraki · ⌥⌘K temizle")
+                    Text("⌘P komut paleti · ⇧⌘E seçili metni açıkla · ⌘F bul · ⌘G sonraki · ⌥⌘K temizle")
                     Text("⌘+ / ⌘- yazı boyutu · ⌥⌘0 sıfırla · ⌘D yan yana böl · ⇧⌘D birleştir")
                     Text("⌘T bağlan · ⌘J terminaller · ⌘0 genel bakış · ⌘1…9 sekmeler")
                 }

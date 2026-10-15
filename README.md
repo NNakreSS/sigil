@@ -117,7 +117,7 @@ Hayır. Sigil'in hesap sistemi, sunucusu ya da analitiği yok. Uygulama internet
 1. **SSH ile kendi sunucularına.**
 2. **GitHub'a, güncelleme kontrolü için.** Sparkle `appcast.xml` dosyasını indirir. Güncellemeler EdDSA ile imzalıdır, imzası tutmayan bir dosya kurulmaz.
 
-Kodda bunların dışında ağ isteği yapan bir satır (`URLSession` vb.) yok. 1Password seçeneğinde, ürettiğin anahtar 1Password'ün kendi şifreli senkronizasyonuyla kasana kaydedilir. Bu, 1Password'ün normal işleyişidir.
+Kodda bunların dışında tek bir ağ isteği var ve o da **yalnızca sen açarsan** çalışır: Ayarlar → Terminal → Kod yardımında "Claude (kendi API anahtarın)" seçilirse, öneri istediğin anda isteğin (ya da seçtiğin terminal metni) ve sunucunun işletim sistemi ile kurulu araçların listesi Anthropic'e gönderilir. Sunucu adresi, kullanıcı adı ve anahtarlar gönderilmez. Varsayılan kod yardımı Apple'ın cihaz içi modelidir ve Mac'ten hiçbir şey çıkmaz. 1Password seçeneğinde, ürettiğin anahtar 1Password'ün kendi şifreli senkronizasyonuyla kasana kaydedilir. Bu, 1Password'ün normal işleyişidir.
 </details>
 
 <details>

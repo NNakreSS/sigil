@@ -87,6 +87,14 @@ struct CommandPalette: View {
     @State private var filling: CommandTemplate?
     @State private var values: [String: String] = [:]
     @FocusState private var field: Int?
+    /// The plain-language request sent to the assistant, while its answer is shown.
+    @State private var asked: String?
+
+    private var assistantOn: Bool { AssistantSettings.shared.isEnabled }
+    private var askable: String? {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return assistantOn && q.count >= 4 && q.contains(" ") ? q : nil
+    }
 
     private var server: Server? { terminals.active.flatMap { model.server($0.serverID) } }
     private var profile: ServerProfile? { ServerProfile(server?.health) }
@@ -101,7 +109,16 @@ struct CommandPalette: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let filling { form(filling) } else { list }
+            if let asked {
+                AssistantAnswerView(request: asked, context: AssistantContext(health: server?.health),
+                                    isProduction: server?.isProduction == true) { command in
+                    terminals.showingPalette = false
+                    self.asked = nil
+                    terminals.type(command, run: false)
+                } save: { command in
+                    try? model.saveAction(QuickAction(name: asked, command: command))
+                }
+            } else if let filling { form(filling) } else { list }
         }
         .frame(width: 600)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -109,7 +126,9 @@ struct CommandPalette: View {
         .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         .onAppear { focused = true }
         .onExitCommand {
-            if filling != nil { filling = nil; focused = true } else { terminals.showingPalette = false }
+            if asked != nil { asked = nil; focused = true }
+            else if filling != nil { filling = nil; focused = true }
+            else { terminals.showingPalette = false }
         }
     }
 
@@ -149,6 +168,10 @@ struct CommandPalette: View {
                                 .id(item.id)
                                 .onTapGesture { selected = i; choose(items, run: false) }
                         }
+                        if let q = askable {
+                            askRow(q, highlighted: selected == items.count).id("ask")
+                                .onTapGesture { asked = q }
+                        }
                         if items.isEmpty { saveRow }
                     }
                     .padding(6)
@@ -156,12 +179,13 @@ struct CommandPalette: View {
                 .frame(height: 380)
                 .onChange(of: selected) { _, i in
                     if items.indices.contains(i) { withAnimation(Motion.quick) { proxy.scrollTo(items[i].id) } }
+                    else if i == items.count { withAnimation(Motion.quick) { proxy.scrollTo("ask") } }
                 }
             }
             Divider()
             footer
         }
-        .onKeyPress(.downArrow) { selected = min(selected + 1, max(items.count - 1, 0)); return .handled }
+        .onKeyPress(.downArrow) { selected = min(selected + 1, max(items.count - (askable == nil ? 1 : 0), 0)); return .handled }
         .onKeyPress(.upArrow) { selected = max(selected - 1, 0); return .handled }
     }
 
@@ -182,6 +206,21 @@ struct CommandPalette: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(highlighted ? Color.accentInk.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+    }
+
+    private func askRow(_ q: String, highlighted: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles").foregroundStyle(Color.accentInk)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Öner: “\(q)”").font(.callout.weight(.medium))
+                Text(AssistantSettings.shared.provider == .claude ? "Claude bir komut önerir" : "Cihaz içi model bir komut önerir; Mac’ten bir şey çıkmaz")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(highlighted ? Color.accentInk.opacity(0.18) : Color.accentInk.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
     }
 
@@ -257,6 +296,7 @@ struct CommandPalette: View {
     // MARK: Actions
 
     private func choose(_ items: [PaletteItem], run: Bool) {
+        if selected == items.count, let q = askable { asked = q; return }
         guard items.indices.contains(selected) else {
             let q = query.trimmingCharacters(in: .whitespaces)
             if !q.isEmpty { send(q, run: run, changes: false) }
@@ -311,5 +351,146 @@ struct SuggestionHint: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .allowsHitTesting(false)
+    }
+}
+
+
+/// An assistant's suggestion for a plain-language request: editable, checked, and only ever typed (never run).
+struct AssistantAnswerView: View {
+    let request: String
+    let context: AssistantContext
+    let isProduction: Bool
+    let type: (String) -> Void
+    let save: (String) -> Void
+
+    @State private var answer: AssistantAnswer?
+    @State private var command = ""
+    @State private var error: String?
+    @State private var saved = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles").foregroundStyle(Color.accentInk)
+                Text(request).font(.engraved(16)).lineLimit(2)
+                Spacer()
+            }
+            if let answer {
+                TextField("", text: $command, axis: .vertical)
+                    .font(.terminal).textFieldStyle(.plain)
+                    .padding(10)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    .focused($focused)
+                    .onSubmit { if !command.isEmpty { type(command) } }
+                Text(answer.explanation).font(.callout).fixedSize(horizontal: false, vertical: true)
+                FlowLayout(spacing: 6) {
+                    if answer.changesSystem {
+                        Chip(text: isProduction ? "Değiştirir · production" : "Sunucuda değişiklik yapar", systemImage: "exclamationmark.triangle", tint: .amberInk)
+                    }
+                    ForEach(answer.warnings, id: \.self) { Chip(text: $0, systemImage: "questionmark.diamond", tint: .cinnabar) }
+                    if answer.warnings.isEmpty && !answer.command.isEmpty {
+                        Chip(text: "Bilinen komutlar, sözdizimi geçerli", systemImage: "checkmark.seal", tint: .verdigris)
+                    }
+                }
+                Text("Deneysel öneri: çalıştırmadan önce oku. ⏎ komutu terminale yazar, çalıştırmaz.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(AssistantSettings.shared.sourceLabel).font(.caption2).foregroundStyle(.tertiary)
+                HStack {
+                    Button(saved ? "Kaydedildi" : "Komutlarıma kaydet") { save(command); saved = true }
+                        .disabled(command.isEmpty || saved).buttonStyle(.borderless).font(.caption)
+                    Spacer()
+                    Button("Terminale yaz") { type(command) }.buttonStyle(InkButtonStyle()).disabled(command.isEmpty)
+                }
+            } else if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.cinnabar).font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Düşünüyor…").foregroundStyle(.secondary) }
+            }
+        }
+        .padding(16)
+        .task(id: request) { await load() }
+    }
+
+    private func load() async {
+        guard let assistant = AssistantSettings.shared.makeAssistant() else {
+            error = "Kod yardımı kapalı: Ayarlar → Terminal → Kod yardımı."
+            return
+        }
+        do {
+            let a = try await assistant.suggest(request, context: context)
+            answer = a
+            command = a.command
+            focused = true
+        } catch { self.error = error.localizedDescription }
+    }
+}
+
+/// ⇧⌘E: what the selected terminal text means, and a command that may help.
+struct ExplainPanel: View {
+    @Environment(TerminalSessions.self) private var terminals
+    @Environment(DeckModel.self) private var model
+    let text: String
+
+    @State private var answer: AssistantAnswer?
+    @State private var error: String?
+
+    private var context: AssistantContext {
+        AssistantContext(health: terminals.active.flatMap { model.server($0.serverID)?.health })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Açıkla", systemImage: "sparkles").font(.engraved(15)).foregroundStyle(Color.accentInk)
+                Spacer()
+                Button { terminals.explaining = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+            }
+            Text(text.trimmingCharacters(in: .whitespacesAndNewlines)).font(.terminalSmall).foregroundStyle(.secondary)
+                .lineLimit(4).truncationMode(.tail)
+                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("Önce terminalde açıklanacak metni (ör. bir hata satırını) fareyle seç, sonra ⇧⌘E’ye bas.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+            } else if let answer {
+                Text(answer.explanation).font(.callout).fixedSize(horizontal: false, vertical: true)
+                if !answer.command.isEmpty {
+                    HStack {
+                        Text(answer.command).font(.terminalSmall).textSelection(.enabled).lineLimit(2)
+                        Spacer()
+                        Button("Terminale yaz") { terminals.explaining = nil; terminals.type(answer.command, run: false) }
+                            .controlSize(.small)
+                    }
+                    .padding(8)
+                    .background(Color.accentInk.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    ForEach(answer.warnings, id: \.self) { Label($0, systemImage: "questionmark.diamond").font(.caption).foregroundStyle(Color.cinnabar) }
+                }
+                Text(AssistantSettings.shared.sourceLabel).font(.caption2).foregroundStyle(.tertiary)
+            } else if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.cinnabar).font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Okuyor…").foregroundStyle(.secondary) }
+            }
+        }
+        .padding(14)
+        .frame(width: 420)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
+        .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
+        .onExitCommand { terminals.explaining = nil }
+        .task(id: text) { await load() }
+    }
+
+    private func load() async {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let assistant = AssistantSettings.shared.makeAssistant() else {
+            error = "Kod yardımı kapalı: Ayarlar → Terminal → Kod yardımı."
+            return
+        }
+        do { answer = try await assistant.explain(text, context: context) }
+        catch { self.error = error.localizedDescription }
     }
 }

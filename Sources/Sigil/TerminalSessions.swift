@@ -49,6 +49,8 @@ final class TerminalSessions {
     var split: TerminalSplit?
     var showingFind = false
     var showingPalette = false
+    /// Terminal text the user asked to have explained (⇧⌘E).
+    var explaining: String?
     var findTerm = ""
     /// "2/14" for the find bar.
     var findSummary: (index: Int, total: Int) = (0, 0)
@@ -197,6 +199,12 @@ struct TerminalWorkspaceView: View {
                     .transition(.opacity)
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if let text = terminals.explaining {
+                    ExplainPanel(text: text).padding(14).transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .animation(Motion.quick, value: terminals.explaining)
             .animation(Motion.quick, value: terminals.showingFind)
             .animation(Motion.quick, value: terminals.showingPalette)
         }
@@ -210,7 +218,7 @@ struct TerminalWorkspaceView: View {
 
     private func pane(_ s: TerminalSession, isActive: Bool, split: Bool) -> some View {
         TerminalHost(session: s, configFile: terminals.configFile, fontSize: terminals.fontSize,
-                     wantsFocus: isActive && !terminals.showingFind && !terminals.showingPalette,
+                     wantsFocus: isActive && !terminals.showingFind && !terminals.showingPalette && terminals.explaining == nil,
                      onFocus: { if terminals.activeID != s.id { terminals.activeID = s.id; router.selection = s.serverID } },
                      appearanceKey: appearanceKey,
                      completions: completions(for: s))
@@ -251,7 +259,7 @@ struct TerminalWorkspaceView: View {
                     .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                 }
             }
-            .padding(.leading, 10).padding(.trailing, 160).padding(.vertical, 6)   // room for the tool buttons
+            .padding(.leading, 10).padding(.trailing, 190).padding(.vertical, 6)   // room for the tool buttons
             .animation(Motion.stamp, value: terminals.sessions.map(\.id))
         }
         .overlay(alignment: .trailing) { if terminals.active != nil { toolButtons } }
@@ -263,6 +271,7 @@ struct TerminalWorkspaceView: View {
         HStack(spacing: 2) {
             tool("command", "Komut paleti (⌘P)") { terminals.showingFind = false; terminals.showingPalette = true }
             tool("magnifyingglass", "Bul (⌘F)") { terminals.showingPalette = false; terminals.showingFind = true }
+            tool("sparkles", "Seçili metni açıkla (⇧⌘E)") { terminals.explaining = terminals.selectedText() ?? "" }
             tool(terminals.split == nil ? "rectangle.split.2x1" : "rectangle", terminals.split == nil ? "Yan yana böl (⌘D)" : "Bölmeyi kapat (⇧⌘D)") {
                 if terminals.split != nil { terminals.unsplit() }
                 else if let s = terminals.active, let server = model.server(s.serverID) { terminals.splitActive(with: server) }
@@ -520,6 +529,11 @@ extension TerminalSessions {
         activeView?.send(data: ArraySlice(Array((run ? line + "\r" : line).utf8)))
     }
 
+    /// What is selected in the active terminal.
+    func selectedText() -> String? {
+        activeView?.getSelection().flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    }
+
     /// Ctrl-L: the shell redraws an empty screen, keeping the scrollback.
     func clearScreen() { activeView?.send(data: [0x0C]) }
 
@@ -549,6 +563,7 @@ struct TerminalHost: View {
 }
 
 extension TerminalSessions {
+    func selectedText() -> String? { nil }
     func type(_ text: String, run: Bool) {}
     func clearScreen() {}
     func find(backwards: Bool = false) {}

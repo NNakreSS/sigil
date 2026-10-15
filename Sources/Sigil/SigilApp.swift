@@ -162,6 +162,8 @@ struct SigilApp: App {
             .keyboardShortcut("g").disabled(!hasTerminal || t.findTerm.isEmpty)
         Button("Öncekini Bul") { t.find(backwards: true) }
             .keyboardShortcut("g", modifiers: [.command, .shift]).disabled(!hasTerminal || t.findTerm.isEmpty)
+        Button("Seçili Metni Açıkla") { t.showingPalette = false; t.explaining = t.selectedText() ?? "" }
+            .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(!hasTerminal)
         Button("Ekranı Temizle") { t.clearScreen() }
             .keyboardShortcut("k", modifiers: [.command, .option]).disabled(!hasTerminal)
         Divider()
