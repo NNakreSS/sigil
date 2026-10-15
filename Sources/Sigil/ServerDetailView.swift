@@ -278,7 +278,7 @@ struct ServerDetailView: View {
     // MARK: Cards
 
     private func connectionCard(_ s: Server) -> some View {
-        Card(title: "Bağlantı", systemImage: "point.3.connected.trianglepath.dotted") {
+        Card(title: "Bağlantı", systemImage: "point.3.connected.trianglepath.dotted", help: .connection) {
             InfoRow(label: "Adres") { Text("\(s.host):\(s.port)").font(.terminal).textSelection(.enabled) }
             InfoRow(label: "Kullanıcı") { Text(s.user).font(.terminal) }
             InfoRow(label: "Son denetim") {
@@ -297,7 +297,7 @@ struct ServerDetailView: View {
     }
 
     private func keyCard(_ s: Server) -> some View {
-        Card(title: "Mühür ve anahtar", systemImage: "seal") {
+        Card(title: "Mühür ve anahtar", systemImage: "seal", help: .keyAndSeal) {
             InfoRow(label: "Parmak izi") {
                 Text(s.keyFingerprint.replacingOccurrences(of: "SHA256:", with: ""))
                     .font(.terminalSmall)
@@ -335,7 +335,7 @@ struct ServerDetailView: View {
     }
 
     private func historyCard(_ s: Server) -> some View {
-        Card(title: "Sunucudaki son girişler", systemImage: "person.badge.clock") {
+        Card(title: "Sunucudaki son girişler", systemImage: "person.badge.clock", help: .logins) {
             Text("Sunucunun kendi kaydı. Başka bilgisayarlardan yapılan girişler de görünür; tanımadığın bir IP görürsen yeni mühür bas.")
                 .font(.caption).foregroundStyle(.secondary)
 
@@ -374,7 +374,7 @@ struct ServerDetailView: View {
     }
 
     private func eventsCard(_ s: Server) -> some View {
-        Card(title: "Geçmiş", systemImage: "list.bullet.below.rectangle") {
+        Card(title: "Geçmiş", systemImage: "list.bullet.below.rectangle", help: .events) {
             if s.events.isEmpty {
                 Text("Henüz kayıt yok.").foregroundStyle(.secondary)
             }

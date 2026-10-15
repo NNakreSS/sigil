@@ -211,11 +211,13 @@ private struct KeySettings: View {
             Picker("Varsayılan yenileme", selection: $defaultRotationDays) {
                 ForEach(RotationChoice.all, id: \.days) { Text($0.label).tag($0.days) }
             }
-            Picker("Touch ID onayı geçerli kalsın", selection: $approvalWindow) {
+            Picker(selection: $approvalWindow) {
                 Text("Her bağlantıda sor").tag(0)
                 Text("5 dakika").tag(5)
                 Text("15 dakika").tag(15)
                 Text("1 saat").tag(60)
+            } label: {
+                HStack(spacing: 4) { Text("Touch ID onayı geçerli kalsın"); HelpButton(topic: .approvalWindow) }
             }
             .onChange(of: approvalWindow) { _, m in model.approvalWindowMinutes = m }
             Text(approvalWindow == 0

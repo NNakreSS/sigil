@@ -10,7 +10,7 @@ struct TunnelsCard: View {
     @State private var error: String?
 
     var body: some View {
-        Card(title: "Tüneller", systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
+        Card(title: "Tüneller", systemImage: "point.topleft.down.to.point.bottomright.curvepath", help: .tunnels) {
             let tunnels = server.tunnels ?? []
             if tunnels.isEmpty {
                 Text("Sunucudaki bir portu (ör. veritabanı) bu Mac’e getir: localhost:5433 → sunucu:5432.")
@@ -76,7 +76,10 @@ private struct TunnelEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(tunnel.name.isEmpty ? "Yeni tünel" : tunnel.name).font(.engraved(20, weight: .bold))
+            HStack(spacing: 6) {
+                Text(tunnel.name.isEmpty ? "Yeni tünel" : tunnel.name).font(.engraved(20, weight: .bold))
+                HelpButton(topic: .tunnels)
+            }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
                 GridRow {
                     Text("Ad").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
@@ -156,7 +159,10 @@ struct ActionsSheet: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(action?.name ?? "Bir eylem seç").font(.engraved(20, weight: .bold))
+                HStack(spacing: 6) {
+                    Text(action?.name ?? "Bir eylem seç").font(.engraved(20, weight: .bold))
+                    HelpButton(topic: .quickActions)
+                }
                 if let a = action {
                     Text(a.command).font(.terminalSmall).textSelection(.enabled)
                         .padding(10).frame(maxWidth: .infinity, alignment: .leading)

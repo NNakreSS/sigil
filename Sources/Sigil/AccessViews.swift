@@ -11,7 +11,7 @@ struct GrantsCard: View {
     @State private var error: String?
 
     var body: some View {
-        Card(title: "Erişim verilenler", systemImage: "person.badge.key") {
+        Card(title: "Erişim verilenler", systemImage: "person.badge.key", help: .grants) {
             let grants = server.grants ?? []
             if grants.isEmpty {
                 Text("Bir arkadaşına ya da ekip üyesine kendi anahtarıyla giriş izni ver. Şifre paylaşmadan, istersen süreli ve istediğin an geri alınabilir.")

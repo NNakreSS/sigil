@@ -9,7 +9,7 @@ struct KeysAuditCard: View {
     @State private var confirmRemove: ForeignKey?
 
     var body: some View {
-        Card(title: "Sunucudaki anahtarlar", systemImage: "key.viewfinder") {
+        Card(title: "Sunucudaki anahtarlar", systemImage: "key.viewfinder", help: .foreignKeys) {
             HStack(spacing: 10) {
                 SigilMark(geometry: server.sigil, size: 26, reachable: server.lastReachable)
                 VStack(alignment: .leading, spacing: 1) {

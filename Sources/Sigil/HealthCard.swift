@@ -9,7 +9,7 @@ struct HealthCard: View {
     @State private var error: String?
 
     var body: some View {
-        Card(title: "Sağlık", systemImage: "waveform.path.ecg") {
+        Card(title: "Sağlık", systemImage: "waveform.path.ecg", help: .health) {
             if let h = server.health {
                 HStack(spacing: 22) {
                     Gauge(title: "Disk", value: h.diskUsage, detail: h.diskTotalKB.map { "\(gb($0 - (h.diskUsedKB ?? 0))) boş" })

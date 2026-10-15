@@ -188,7 +188,7 @@ struct AddServerSheet: View {
                 }
                 if !model.servers.filter({ $0.jumpServerID == nil }).isEmpty {
                     GridRow {
-                        label("Üzerinden")
+                        label("Üzerinden", help: .jumpServer)
                         Picker("", selection: $jumpID) {
                             Text("Doğrudan").tag(UUID?.none)
                             ForEach(model.servers.filter { $0.jumpServerID == nil }) { Text($0.alias).tag(UUID?.some($0.id)) }
@@ -206,14 +206,14 @@ struct AddServerSheet: View {
                     SecureField("", text: $password, prompt: Text("Bir kez kullanılır, saklanmaz")).focused($focus, equals: .password)
                 }
                 GridRow {
-                    label("Anahtar")
+                    label("Anahtar", help: .keyStore)
                     Picker("", selection: $keyStore) {
                         ForEach(KeyStoreKind.available) { Label($0.title, systemImage: $0.symbol).tag($0) }
                     }
                     .pickerStyle(.segmented).labelsHidden()
                 }
                 GridRow {
-                    label("Yenileme")
+                    label("Yenileme", help: .rotation)
                     Picker("", selection: $interval) {
                         ForEach(RotationChoice.all, id: \.days) { Text($0.label).tag($0.days) }
                     }
@@ -325,8 +325,12 @@ struct AddServerSheet: View {
         }
     }
 
-    private func label(_ text: String) -> some View {
-        Text(text).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+    private func label(_ text: String, help: HelpTopic? = nil) -> some View {
+        HStack(spacing: 4) {
+            if let help { HelpButton(topic: help) }
+            Text(text).foregroundStyle(.secondary)
+        }
+        .gridColumnAlignment(.trailing)
     }
 
     // MARK: Actions

@@ -17,7 +17,10 @@ struct HardeningSheet: View {
             HStack(spacing: 14) {
                 SigilMark(geometry: server.sigil, size: 46, busy: phase == .working || phase == .loading)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(server.alias) sertleştir").font(.engraved(22, weight: .bold))
+                    HStack(spacing: 6) {
+                        Text("\(server.alias) sertleştir").font(.engraved(22, weight: .bold))
+                        HelpButton(topic: .hardening)
+                    }
                     Text("Erişimi etkileyen her değişiklik doğrulanana kadar geçicidir; doğrulanamazsa sunucu kendiliğinden geri alır.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
