@@ -9,12 +9,20 @@ public struct RemoteTarget: Sendable, Equatable {
     /// Reuse an already authenticated connection (ssh ControlMaster socket), so a burst of commands, e.g. while
     /// browsing files, asks for Touch ID once instead of every time.
     public var controlPath: String?
+    /// Share one approved connection for this many minutes (ControlMaster auto + ControlPersist): Touch ID or
+    /// 1Password approval is asked once per window, like the terminal's `ssh <alias>` with Sigil's config.
+    public var persist: (directory: String, minutes: Int)?
     public init(host: String, port: Int, user: String, proxyCommand: String? = nil, controlPath: String? = nil) {
         self.host = host
         self.port = port
         self.user = user
         self.proxyCommand = proxyCommand
         self.controlPath = controlPath
+    }
+
+    public static func == (a: RemoteTarget, b: RemoteTarget) -> Bool {
+        a.host == b.host && a.port == b.port && a.user == b.user && a.proxyCommand == b.proxyCommand
+            && a.controlPath == b.controlPath && a.persist?.directory == b.persist?.directory && a.persist?.minutes == b.persist?.minutes
     }
 }
 
@@ -179,6 +187,15 @@ public struct RemoteService: Sendable {
 
     // MARK: Plumbing
 
+    /// How this call may share a connection: an explicit panel socket, the approval window, or not at all.
+    static func multiplexing(_ t: RemoteTarget) -> [String] {
+        if let path = t.controlPath { return ["-o", "ControlMaster=no", "-o", "ControlPath=\(path)"] }
+        if let p = t.persist, p.minutes > 0 {
+            return ["-o", "ControlMaster=auto", "-o", "ControlPath=\(p.directory)/%C", "-o", "ControlPersist=\(p.minutes)m"]
+        }
+        return ["-o", "ControlMaster=no", "-o", "ControlPath=none"]
+    }
+
     func arguments(for target: RemoteTarget, auth: RemoteAuth, command: String) -> [String] {
         if case .userConfig(let alias, let configFile) = auth {
             return [
@@ -198,7 +215,7 @@ public struct RemoteService: Sendable {
             "-o", "UserKnownHostsFile=\(paths.knownHosts.path)",
             "-o", "ConnectTimeout=15",
             "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
-            "-o", "ControlMaster=no", "-o", "ControlPath=\(target.controlPath ?? "none")",
+        ] + Self.multiplexing(target) + [
             "-o", "LogLevel=ERROR",
             "-p", String(target.port),
         ]

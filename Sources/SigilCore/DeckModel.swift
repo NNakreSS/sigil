@@ -27,6 +27,10 @@ public final class DeckModel {
     private var tunnelProcesses: [UUID: TunnelProcess] = [:]
     /// Shared connections for open panels (file browser, Docker), by server.
     var sessions: [UUID: RemoteSession] = [:]
+    /// How long one Touch ID / 1Password approval covers further connections to the same server (0: ask every time).
+    public var approvalWindowMinutes = 15 {
+        didSet { if approvalWindowMinutes != oldValue { writeConfig(); if approvalWindowMinutes == 0 { Task { await lockApprovals() } } } }
+    }
     /// Tunnel id → server id, for every tunnel currently up.
     public private(set) var activeTunnels: [UUID: UUID] = [:]
     public private(set) var actions: [QuickAction] = []
@@ -175,7 +179,7 @@ public final class DeckModel {
             server.secureEnclaveKeyHash = material.secureEnclaveKeyHash
             server.events.append(ServerEvent(level: .info, message: "Sunucu eklendi; ilk anahtar kuruldu."))
             let updated = servers + [server]
-            try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath)
+            try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
             servers = updated
             persist()
             return server
@@ -267,7 +271,7 @@ public final class DeckModel {
             server.secureEnclaveKeyHash = material.secureEnclaveKeyHash
             server.events.append(ServerEvent(level: .info, message: "~/.ssh/config’ten içe aktarıldı; yeni anahtar kuruldu."))
             let updated = servers + [server]
-            try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath)
+            try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
             servers = updated
             persist()
 
@@ -386,7 +390,7 @@ public final class DeckModel {
                 $0.lastCheckedAt = Date()
             }
             do {
-                try config.writeIncludeFile(servers, onePasswordSocket: onePassword.socketPath)
+                try config.writeIncludeFile(servers, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
             } catch {
                 servers = previous
                 persist()
@@ -447,7 +451,7 @@ public final class DeckModel {
         var updated = servers
         guard let i = updated.firstIndex(where: { $0.id == id }) else { return }
         updated[i].alias = alias
-        try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath)
+        try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
         servers = updated
         persist()
         log(id, .info, "Kısayol adı “\(s.alias)” → “\(alias)” olarak değişti.")
@@ -467,7 +471,7 @@ public final class DeckModel {
         busy[id] = "Bağlantı denetleniyor"
         defer { busy[id] = nil }
 
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         let useKey = interactive || runsUnattended(s)
 
         // Host key watch: does the server still present the key we trusted?
@@ -512,13 +516,13 @@ public final class DeckModel {
     /// Recent logins as recorded by the server itself.
     public func loginHistory(_ id: UUID) async throws -> [String] {
         guard let s = server(id) else { throw DeckError.notFound }
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         return try await remote.loginHistory(target: target, auth: auth(s.store, s.keyFileName))
     }
 
     private func retryPendingRemovals(_ id: UUID) async {
         guard let s = server(id), !s.pendingKeyRemovals.isEmpty else { return }
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         var remaining: [String] = []
         for blob in s.pendingKeyRemovals {
             do { try await remote.removeKey(target: target, auth: auth(s.store, s.keyFileName), blob: blob) }
@@ -543,7 +547,7 @@ public final class DeckModel {
         busy[id] = "Mühürler denetleniyor"
         defer { busy[id] = nil }
 
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         let lines = try await remote.listAuthorizedKeys(target: target, auth: auth(s.store, s.keyFileName))
         // Keys the user granted through Sigil are known, not foreign.
         let ours = Set([s.publicKeyBlob] + s.pendingKeyRemovals + (s.grants ?? []).map(\.publicKeyBlob))
@@ -588,7 +592,7 @@ public final class DeckModel {
         guard busy[id] == nil else { throw DeckError.busy }
         busy[id] = "Anahtar kaldırılıyor"
         defer { busy[id] = nil }
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         try await remote.removeKey(target: target, auth: auth(s.store, s.keyFileName), blob: blob)
         update(id) { $0.foreignKeys?.removeAll { $0.blob == blob } }
         log(id, .info, "Yabancı anahtar sunucudan kaldırıldı (\(Fingerprint.sha256(ofBase64: blob) ?? "?")).")
@@ -633,7 +637,7 @@ public final class DeckModel {
         busy[id] = "Sağlık ölçülüyor"
         defer { busy[id] = nil }
 
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         let h = try await remote.collectHealth(target: target, auth: auth(s.store, s.keyFileName))
         let problems = h.problems()
         let fresh = problems.filter { !(s.announcedProblems ?? []).contains($0) }
@@ -668,7 +672,7 @@ public final class DeckModel {
 
     public func hardeningState(_ id: UUID) async throws -> HardeningState {
         guard let s = server(id) else { throw DeckError.notFound }
-        let target = self.target(for: s)
+        let target = sharedTarget(for: s)
         return try await remote.hardeningState(target: target, auth: auth(s.store, s.keyFileName))
     }
 
@@ -869,7 +873,7 @@ public final class DeckModel {
         }
 
         let remaining = servers.filter { $0.id != id }
-        try config.writeIncludeFile(remaining, onePasswordSocket: onePassword.socketPath)
+        try config.writeIncludeFile(remaining, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
         servers = remaining
         persist()
         await deleteKey(of: s)
@@ -881,6 +885,40 @@ public final class DeckModel {
     // MARK: Jump hosts
 
     /// How to reach a managed server (directly, or through its jump server).
+    /// For reads and checks: shares one approved connection within the approval window (servers whose key asks for
+    /// approval). Never used where a fresh login is the point: verifying a new key, confirming hardening.
+    func sharedTarget(for s: Server) -> RemoteTarget {
+        var t = target(for: s)
+        if s.store.asksForApproval, approvalWindowMinutes > 0, s.jumpServerID == nil {
+            t.persist = (config.controlDirectory.path, approvalWindowMinutes)
+        }
+        return t
+    }
+
+    /// Same, without waiting: for when Sigil is quitting.
+    public func lockApprovalsNow() {
+        let dir = config.controlDirectory
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            p.arguments = ["-o", "ControlPath=\(dir.appendingPathComponent(name).path)", "-O", "exit", "sigil"]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run()
+        }
+        closeAllSessions()
+    }
+
+    /// Ends every approved connection now (screen locked, Mac asleep, Sigil quitting, or the user asked).
+    public func lockApprovals() async {
+        let dir = config.controlDirectory
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] {
+            let socket = dir.appendingPathComponent(name).path
+            _ = try? await Shell.run("/usr/bin/ssh", ["-o", "ControlPath=\(socket)", "-O", "exit", "sigil"], timeout: 5)
+        }
+        closeAllSessions()
+    }
+
     public func target(for s: Server) -> RemoteTarget {
         guard let j = s.jumpServerID, let jump = server(j) else { return RemoteTarget(host: s.host, port: s.port, user: s.user) }
         let pc = remote.proxyCommand(through: RemoteTarget(host: jump.host, port: jump.port, user: jump.user),
@@ -917,7 +955,7 @@ public final class DeckModel {
         var updated = servers
         guard let i = updated.firstIndex(where: { $0.id == id }) else { throw DeckError.notFound }
         updated[i].jumpServerID = jumpID
-        try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath)
+        try config.writeIncludeFile(updated, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
         servers = updated
         persist()
     }
@@ -973,7 +1011,7 @@ public final class DeckModel {
     }
 
     private func writeConfig() {
-        try? config.writeIncludeFile(servers, onePasswordSocket: onePassword.socketPath)
+        try? config.writeIncludeFile(servers, onePasswordSocket: onePassword.socketPath, persistMinutes: approvalWindowMinutes)
     }
 
     // MARK: Helpers

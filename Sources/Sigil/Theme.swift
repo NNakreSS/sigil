@@ -114,7 +114,7 @@ extension KeyStoreKind {
     var explanation: String {
         switch self {
         case .secureEnclave:
-            return "Anahtar Mac’in güvenlik çipinde üretilir; hiçbir şekilde dışarı çıkarılamaz. Her giriş Touch ID ister, Terminal’den bile. Sigil bu sunuculara arka planda hiç bağlanmaz."
+            return "Anahtar Mac’in güvenlik çipinde üretilir; hiçbir şekilde dışarı çıkarılamaz. Giriş Touch ID ister, Terminal’den bile; onay bir süre geçerli kalır (Ayarlar’dan değiştirilir), ekran kilitlenince biter. Sigil bu sunuculara arka planda hiç bağlanmaz."
         case .onePassword:
             return "Anahtar 1Password’de üretilir, hiç diske yazılmaz. Her kullanım Touch ID ile onaylanır; yenileme onay ister."
         case .keychain:

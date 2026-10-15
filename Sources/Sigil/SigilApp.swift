@@ -195,10 +195,21 @@ struct SigilApp: App {
         model.notify = { title, body in Notifier.post(title, body) }
         // Tunnels are child ssh processes; never leave them running (and holding ports) after Sigil quits.
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [model] _ in
-            MainActor.assumeIsolated { model.stopAllTunnels(); model.closeAllSessions() }
+            MainActor.assumeIsolated { model.stopAllTunnels(); model.lockApprovalsNow() }
+        }
+        // Like a password manager locking: an approval does not outlive the screen lock or sleep.
+        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [model] _ in
+                MainActor.assumeIsolated { Task { await model.lockApprovals() } }
+            }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [model] _ in
+            MainActor.assumeIsolated { Task { await model.lockApprovals() } }
         }
         // In sandbox runs, point in-app and external ssh at the sandboxed config.
         if ProcessInfo.processInfo.environment["SIGIL_SANDBOX"] != nil { router.terminals.configFile = model.paths.mainConfig.path }
+        let window = UserDefaults.standard.object(forKey: "approvalWindowMinutes") as? Int ?? 15
+        model.approvalWindowMinutes = window
         model.load()
         let defaultStore = KeyStoreKind(rawValue: UserDefaults.standard.string(forKey: "defaultKeyStore") ?? "")
         if model.usesOnePassword(defaultStore: defaultStore) { await model.refreshOnePasswordStatus() }

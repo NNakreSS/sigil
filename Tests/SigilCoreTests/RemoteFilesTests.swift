@@ -71,3 +71,50 @@ final class RemoteFilesTests: XCTestCase {
         XCTAssertEqual(files[2].kind, .link)
     }
 }
+
+/// The approval window: one login is shared for a while (ControlPersist), Sigil's calls do not hang on the
+/// backgrounded master, and locking ends it.
+@MainActor
+final class ApprovalWindowTests: XCTestCase {
+    func testOneLoginIsSharedUntilLocked() async throws {
+        let box = try Sandbox()
+        let sshd = try LocalSSHD(sandbox: box)
+        let model = DeckModel(paths: box.paths, hardened: false, authorizedKeysPath: sshd.authorizedKeys.path)
+        model.initialAuthOverride = .key(fileName: sshd.bootstrapKeyName)
+        let draft = ServerDraft(alias: "win", host: "127.0.0.1", port: sshd.port, user: NSUserName(), keyStore: .keychain)
+        let (d, keys) = try await model.scanHostKeys(for: draft)
+        let s = try await model.addServer(draft: d, password: "unused", hostKeys: keys)
+        defer { Task { await model.lockApprovals() } }
+
+        var t = model.target(for: s)
+        t.persist = (ConfigManager(paths: box.paths).controlDirectory.path, 1)
+        try FileManager.default.createDirectory(at: ConfigManager(paths: box.paths).controlDirectory, withIntermediateDirectories: true)
+        let auth = RemoteAuth.key(fileName: s.keyFileName)
+
+        let start = Date()
+        try await model.remote.ping(target: t, auth: auth)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 10, "the backgrounded master must not hold the call open")
+
+        let key = box.paths.keyURL(s.keyFileName)
+        try FileManager.default.moveItem(at: key, to: key.appendingPathExtension("away"))
+        try await model.remote.ping(target: t, auth: auth)   // no key: only the shared login can do this
+
+        await model.lockApprovals()
+        do { try await model.remote.ping(target: t, auth: auth); XCTFail("locked: a new login needs the key") } catch {}
+    }
+
+    func testConfigSharesOnlyForServersThatAskForApproval() throws {
+        let box = try Sandbox()
+        var se = Server(alias: "se", host: "203.0.113.7", port: 22, user: "u", keyFileName: "k1",
+                        publicKeyBlob: "AAAAC3NzaC1lZDI1NTE5AAAAIabc", keyFingerprint: "SHA256:x")
+        se.keyStore = .secureEnclave
+        let kc = Server(alias: "kc", host: "203.0.113.8", port: 22, user: "u", keyFileName: "k2",
+                        publicKeyBlob: "AAAAC3NzaC1lZDI1NTE5AAAAIdef", keyFingerprint: "SHA256:y")
+        let text = ConfigManager(paths: box.paths).render([se, kc], persistMinutes: 15)
+        // Blocks are sorted by alias: kc, then se.
+        let parts = text.components(separatedBy: "Host se")
+        XCTAssertTrue(parts[1].contains("ControlMaster auto") && parts[1].contains("ControlPersist 15m") && parts[1].contains("/cm/%C"))
+        XCTAssertFalse(parts[0].contains("ControlMaster"), "Keychain keys never ask, so nothing to share")
+        XCTAssertFalse(ConfigManager(paths: box.paths).render([se], persistMinutes: 0).contains("ControlMaster"), "0 = ask every time")
+    }
+}

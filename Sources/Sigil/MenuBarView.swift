@@ -97,6 +97,10 @@ struct MenuBarView: View {
                     .disabled(model.servers.isEmpty)
                 Spacer()
                 Button {
+                    Task { await model.lockApprovals(); Haptics.success() }
+                } label: { Image(systemName: "lock") }
+                    .help("Onayları şimdi kilitle: sonraki bağlantı yeniden Touch ID ister")
+                Button {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     openSettings()
                 } label: { Image(systemName: "gearshape") }

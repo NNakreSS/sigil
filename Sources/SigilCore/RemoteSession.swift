@@ -59,6 +59,9 @@ extension DeckModel {
     /// The target for `id`, going through its shared connection (opened on first use).
     public func sessionTarget(_ id: UUID) async throws -> RemoteTarget {
         guard let s = server(id) else { throw DeckError.notFound }
+        // Within the approval window the shared login already does this (and asks once for everything).
+        let shared = sharedTarget(for: s)
+        if shared.persist != nil { return shared }
         var t = target(for: s)
         if let existing = sessions[id], existing.isAlive {
             t.controlPath = existing.path

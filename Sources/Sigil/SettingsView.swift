@@ -182,6 +182,7 @@ private struct KeySettings: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.preferredDefault.rawValue
     @AppStorage("defaultRotationDays") private var defaultRotationDays = 30
+    @AppStorage("approvalWindowMinutes") private var approvalWindow = 15
 
     var body: some View {
         Form {
@@ -191,6 +192,17 @@ private struct KeySettings: View {
             Picker("Varsayılan yenileme", selection: $defaultRotationDays) {
                 ForEach(RotationChoice.all, id: \.days) { Text($0.label).tag($0.days) }
             }
+            Picker("Touch ID onayı geçerli kalsın", selection: $approvalWindow) {
+                Text("Her bağlantıda sor").tag(0)
+                Text("5 dakika").tag(5)
+                Text("15 dakika").tag(15)
+                Text("1 saat").tag(60)
+            }
+            .onChange(of: approvalWindow) { _, m in model.approvalWindowMinutes = m }
+            Text(approvalWindow == 0
+                 ? "Secure Enclave ve 1Password anahtarları her bağlantıda onay ister."
+                 : "Bir sunucuya onay verdikten sonra, bu süre boyunca aynı sunucuya açılan bağlantılar (Sigil, terminal sekmeleri, Terminal’den ssh) tekrar sormaz. Ekran kilitlenince, Mac uyuyunca ya da Sigil kapanınca hemen sona erer. Anahtar yenileme ve sertleştirme her zaman yeni bir onay ister.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             LabeledContent("1Password") {
                 HStack {
                     Image(systemName: model.onePasswordStatus.isReady ? "checkmark.circle.fill" : "exclamationmark.circle")

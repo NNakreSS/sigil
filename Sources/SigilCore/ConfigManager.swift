@@ -9,7 +9,11 @@ public struct ConfigManager: Sendable {
 
     static let header = "# Managed by Sigil. Manage servers in the app; manual edits to this file are overwritten.\n"
 
-    public func render(_ servers: [Server], onePasswordSocket: String = OnePasswordService.defaultSocketPath) -> String {
+    /// Where shared, already approved connections live (ssh ControlPath %C sockets), 0700.
+    public var controlDirectory: URL { paths.includeFile.deletingLastPathComponent().appendingPathComponent("cm", isDirectory: true) }
+
+    public func render(_ servers: [Server], onePasswordSocket: String = OnePasswordService.defaultSocketPath,
+                       persistMinutes: Int = 0) -> String {
         var out = Self.header
         for s in servers.sorted(by: { $0.alias.lowercased() < $1.alias.lowercased() }) {
             out += "\nHost \(s.alias)\n"
@@ -29,6 +33,10 @@ public struct ConfigManager: Sendable {
                 out += "  IdentityFile \(paths.keyURL(s.keyFileName).path)\n"
                 out += "  IdentitiesOnly yes\n  IdentityAgent none\n  SecurityKeyProvider \(SecureEnclaveService.provider)\n"
             }
+            if s.store.asksForApproval, persistMinutes > 0 {
+                // One Touch ID / 1Password approval covers further connections for a while (same sockets as Sigil's).
+                out += "  ControlMaster auto\n  ControlPath \(controlDirectory.path)/%C\n  ControlPersist \(persistMinutes)m\n"
+            }
             if let j = s.jumpServerID, let jump = servers.first(where: { $0.id == j }) {
                 out += "  ProxyJump \(jump.alias)\n"
             }
@@ -37,9 +45,12 @@ public struct ConfigManager: Sendable {
         return out
     }
 
-    public func writeIncludeFile(_ servers: [Server], onePasswordSocket: String = OnePasswordService.defaultSocketPath) throws {
+    public func writeIncludeFile(_ servers: [Server], onePasswordSocket: String = OnePasswordService.defaultSocketPath,
+                                 persistMinutes: Int = 0) throws {
         try paths.ensureDirectories()
-        try render(servers, onePasswordSocket: onePasswordSocket).write(to: paths.includeFile, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: controlDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try render(servers, onePasswordSocket: onePasswordSocket, persistMinutes: persistMinutes)
+            .write(to: paths.includeFile, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: paths.includeFile.path)
     }
 
