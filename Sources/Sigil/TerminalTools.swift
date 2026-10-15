@@ -37,7 +37,8 @@ struct TerminalFindBar: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .environment(\.colorScheme, TerminalTheme.colorScheme)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.hairline))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .onAppear { focused = true }
@@ -130,7 +131,8 @@ struct CommandPalette: View {
             } else if let filling { form(filling) } else { list }
         }
         .frame(width: 600)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .environment(\.colorScheme, TerminalTheme.colorScheme)
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
         .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         .onAppear { focused = true }
@@ -487,7 +489,8 @@ struct ExplainPanel: View {
         }
         .padding(14)
         .frame(width: 420)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .environment(\.colorScheme, TerminalTheme.colorScheme)
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
         .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
         .onExitCommand { terminals.explaining = nil }

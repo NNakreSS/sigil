@@ -213,7 +213,8 @@ struct TerminalWorkspaceView: View {
     /// Reading every setting here makes SwiftUI refresh the panes when one changes.
     private var appearanceKey: String {
         let a = TerminalAppearance.shared
-        return [a.paletteID, a.fontFamily, a.cursor.rawValue, "\(a.cursorBlinks)", "\(a.optionAsMeta)"].joined(separator: "|")
+        // The app theme matters too while the terminal follows it.
+        return [a.paletteID, ThemeStore.shared.current.id, a.fontFamily, a.cursor.rawValue, "\(a.cursorBlinks)", "\(a.optionAsMeta)"].joined(separator: "|")
     }
 
     private func pane(_ s: TerminalSession, isActive: Bool, split: Bool) -> some View {

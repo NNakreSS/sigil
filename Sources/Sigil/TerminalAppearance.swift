@@ -44,7 +44,26 @@ struct TerminalPalette: Identifiable, Equatable {
                      0x666666, 0xF14C4C, 0x23D18B, 0xF5F543, 0x3B8EEA, 0xD670D6, 0x29B8DB, 0xFFFFFF]),
     ]
 
-    static func named(_ id: String) -> TerminalPalette { all.first { $0.id == id } ?? all[0] }
+    static func named(_ id: String) -> TerminalPalette {
+        if id == appID { return matching(ThemeStore.shared.current) }
+        return all.first { $0.id == id } ?? all[0]
+    }
+
+    /// "Uygulamayla aynı": the terminal takes the app theme's page as its background, so the two never clash.
+    static let appID = "app"
+
+    static func matching(_ t: AppTheme) -> TerminalPalette {
+        let base = t.isDark ? named("ink") : named("parchment")
+        var ansi = base.ansi
+        // Blue and magenta lean towards the theme's own accent and brand.
+        ansi[4] = t.isDark ? t.accent : t.brand
+        ansi[12] = t.isDark ? t.soft : t.accent
+        ansi[2] = t.success
+        ansi[10] = t.success
+        return TerminalPalette(id: appID, name: "Uygulamayla aynı", isLight: !t.isDark, background: t.page,
+                               foreground: t.isDark ? 0xECEAF6 : 0x1F1B4D, cursor: t.success,
+                               selection: t.isDark ? t.brand : t.soft, ansi: ansi)
+    }
 }
 
 /// Everything about how the in-app terminal looks and types, saved across launches.
@@ -80,7 +99,7 @@ final class TerminalAppearance {
     private init() {
         let d = UserDefaults.standard
         fontFamily = d.string(forKey: "terminalFontFamily") ?? ""
-        paletteID = d.string(forKey: "terminalPalette") ?? "ink"
+        paletteID = d.string(forKey: "terminalPalette") ?? TerminalPalette.appID
         cursor = Cursor(rawValue: d.string(forKey: "terminalCursor") ?? "") ?? .block
         cursorBlinks = d.object(forKey: "terminalCursorBlinks") as? Bool ?? true
         optionAsMeta = d.object(forKey: "terminalOptionAsMeta") as? Bool ?? false
@@ -114,6 +133,11 @@ enum TerminalTheme {
     static var foreground: NSColor { TerminalPalette.color(p.foreground) }
     static var caret: NSColor { TerminalPalette.color(p.cursor) }
     static var selection: NSColor { TerminalPalette.color(p.selection, alpha: 0.55) }
+    static var isLight: Bool { p.isLight }
+    /// Panels drawn over the terminal (palette, find, explain): solid and in the terminal's own colours, never a
+    /// translucent material that would pick up the app's light or dark look.
+    static var panel: Color { Color(nsColor: background.blended(withFraction: p.isLight ? 0.04 : 0.10, of: p.isLight ? .black : .white) ?? background) }
+    static var colorScheme: ColorScheme { p.isLight ? .light : .dark }
     static var ansi: [(UInt16, UInt16, UInt16)] {
         p.ansi.map { (UInt16(($0 >> 16) & 0xFF), UInt16(($0 >> 8) & 0xFF), UInt16($0 & 0xFF)) }
     }

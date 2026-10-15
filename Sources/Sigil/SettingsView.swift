@@ -89,6 +89,8 @@ private struct TerminalSettings: View {
             Section("Görünüm") {
                 TerminalPreview(fontSize: terminals.fontSize)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                    PaletteSwatch(palette: TerminalPalette.matching(ThemeStore.shared.current),
+                                  selected: appearance.paletteID == TerminalPalette.appID) { appearance.paletteID = TerminalPalette.appID }
                     ForEach(TerminalPalette.all) { p in
                         PaletteSwatch(palette: p, selected: p.id == appearance.paletteID) { appearance.paletteID = p.id }
                     }
