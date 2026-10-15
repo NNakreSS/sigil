@@ -112,7 +112,7 @@ Hayır. Şifre yalnızca ilk kurulumda, bellekte tutulur ve bir kez kullanılır
 <summary><b>Sigil benim hakkımda bir yere veri gönderiyor mu?</b></summary>
 <br>
 
-Hayır. Sigil'in hesap sistemi, sunucusu ya da analitiği yok. Uygulama internete yalnızca iki yerden çıkar:
+Hayır. Sigil'in hesap sistemi, sunucusu ya da analitiği yok. Kendiliğinden internete yalnızca iki yerden çıkar:
 
 1. **SSH ile kendi sunucularına.**
 2. **GitHub'a, güncelleme kontrolü için.** Sparkle `appcast.xml` dosyasını indirir. Güncellemeler EdDSA ile imzalıdır, imzası tutmayan bir dosya kurulmaz.
@@ -157,7 +157,8 @@ Kodda bunların dışında yalnızca **sen açarsan** çalışan ağ istekleri v
 
 | | |
 |---|---|
-| **Üç anahtar deposu** | Sunucu başına Secure Enclave (Mac'in güvenlik çipi, her girişte Touch ID), 1Password (Touch ID) ya da macOS Keychain (tam otomatik yenileme). |
+| **Üç anahtar deposu** | Sunucu başına Secure Enclave (Mac'in güvenlik çipi, girişte Touch ID), 1Password (onayla) ya da macOS Keychain (tam otomatik yenileme). |
+| **Onay penceresi** | Bir Touch ID onayı seçtiğin süre (varsayılan 15 dakika) aynı sunucuya açılan bağlantıları kapsar: Sigil, terminal sekmeleri ve Terminal'den `ssh`. Ekran kilitlenince, Mac uyuyunca ya da menü çubuğundaki kilitle hemen biter. Anahtar yenileme ve sertleştirme doğrulaması her zaman yeni onay ister. |
 | **Kilitlenmeyen yenileme** | Yeni anahtarla giriş doğrulanmadan eskisi silinmez. 1Password anahtarları için bildirim ve tek tıkla yenileme. |
 | **Gömülü terminal** | Sekmeli terminal, ⌘1…9 ile geçiş, yan yana bölme (⌘D), geçmişte arama (⌘F), yazı boyutu, 8 renk teması, yazı tipi ve imleç ayarları. İstersen Terminal, iTerm2, Ghostty veya Warp. |
 | **Komut paleti (⌘P)** | Türkçe açıklamalı 134 hazır komut; sunucuda neler kurulu olduğuna göre süzülür (Docker yoksa Docker komutları çıkmaz). Boşluklu komutlar önce değerleri sorar, sistemi değiştirenler işaretlidir. |
@@ -165,19 +166,21 @@ Kodda bunların dışında yalnızca **sen açarsan** çalışan ağ istekleri v
 | **Kod yardımı** | “son bir saatteki nginx hatalarını göster” gibi bir isteği komuta çevirir; seçili hata metnini açıklar (⇧⌘E). Varsayılan Apple’ın cihaz içi modeli (Mac’ten bir şey çıkmaz); istersen kendi Claude ya da Gemini API anahtarınla. Öneriler asla kendiliğinden çalışmaz ve Sigil şüpheli komutları işaretler. |
 | **Bakım** | Sunucuyu güncelle (önce paket listesi, sonra terminalde canlı `apt upgrade`) ve yeniden başlat (geri gelene kadar bekler, kaç saniye kapalı kaldığını söyler). |
 | **Erişim ver** | Bir arkadaşının açık anahtarıyla, şifre paylaşmadan giriş izni: kendi hesabı ya da seninki, süreli (sunucu kendisi uygular), IP sınırlı; tek tıkla geri alınır. |
-| **Dosyalar** | Sunucudaki dosyalarda gezin, önizle, sürükle-bırak yükle, indir, yeniden adlandır, sil. Tek bağlantı, tek Touch ID. |
-| **Docker** | Container’lar compose projesine göre gruplu; CPU/bellek, son loglar, canlı log, container içinde kabuk, başlat/durdur/yeniden başlat/sil. |
+| **Dosyalar** | Kendi penceresinde: sunucudaki dosyalarda gezin, önizle (taşınabilir, satır kaydırmalı önizleme penceresi), sürükle-bırak yükle, indir, yeniden adlandır, sil, o klasörde terminal aç. Tek bağlantı, tek Touch ID. |
+| **Docker** | Kendi penceresinde: container’lar compose projesine göre gruplu, CPU/bellek, son loglar ayrı pencerede, canlı log ve container içinde kabuk terminalde, başlat/durdur/yeniden başlat/sil. |
 | **Hızlı bağlan** | ⌘K ile ara ve bağlan. Production sunucuları kırmızıyla işaretlenir ve bağlanmadan önce onay ister. |
 | **İçe aktarma** | `~/.ssh/config` dosyasındaki sunucular şifre gerekmeden taşınır. Eski blok silinmez, yedeklenip yorum satırına alınır. |
 | **Yabancı anahtar denetimi** | `authorized_keys` içindeki tanımadığın anahtarlar listelenir. Tek tıkla kaldırılabilir. |
 | **Host key izleme** | Sunucunun kimliği değişirse alarm verilir, bağlantı durur. |
 | **Sağlık paneli** | Disk, bellek, yük, bekleyen güncellemeler (hangi paketler), çöken servisler (hangileri), yeniden başlatmayı isteyen paketler, SSL bitiş tarihleri. Sorun çıkınca bildirim gelir. |
 | **Sertleştirme sihirbazı** | Şifreli girişi ve root girişini kısıtlar; ufw, fail2ban ve otomatik güvenlik güncellemelerini kurar. Sunucudaki bir bekçi süreç, Sigil 45 saniye içinde yeni bir bağlantıyla doğrulamazsa her şeyi geri alır. |
-| **Tüneller** | Kayıtlı port yönlendirmeleri (`localhost:15432 → db:5432`) tek tıkla açılır. |
+| **Tüneller** | Sunucudaki, dışarıya kapalı bir servisi (veritabanı, Redis, yönetim paneli) şifreli SSH üzerinden Mac'ine getirir: `localhost:15432 → sunucuda 5432`. Sunucuda port açılmaz; tek tıkla açılır, Sigil kapanınca kapanır. |
 | **Hızlı eylemler** | Kayıtlı komutlar birden çok sunucuda paralel çalışır, çıktılar ayrı gösterilir. |
 | **ProxyJump** | Bastion sunucusu üzerinden bağlantı; host key taraması da bastion üzerinden yapılır. |
 | **Arka plan** | Menü çubuğunda çalışır, girişte açılabilir, bildirim gönderir. |
 | **Bağlantılar** | `sigil://connect/<alias>`, `sigil://open/<alias>`, `sigil://quick`: Shortcuts, Raycast ve Alfred ile kullanılabilir. |
+| **Temalar** | Uygulamanın tamamı için Gece (varsayılan), Grafit, Orman gecesi, Mürekkep ve Gün ışığı; ya da macOS'a göre Otomatik. Terminalin kendi 8 renk teması ayrıca seçilir. |
+| **Yönlendirme** | İlk açılışta kısa bir tur (Yardım → Sigil'i Tanı), boş ekranda özellik kutuları, yeni sunucuda “Sırada ne var?” kartı ve her kartta ne işe yaradığını anlatan (?) açıklamaları. |
 | **Otomatik güncelleme** | İmzalı ve notarize edilmiş sürümler GitHub Releases'ten Sparkle ile gelir. |
 
 ## Mühür
@@ -188,7 +191,7 @@ Her sunucunun yedi köşeli bir mührü vardır. Köşeleri, dönüşü ve vurgu
 - Sunucu eklerken sunucunun kendi host key'inden üretilen mühür de gösterilir. Bu, parmak izinin görsel halidir.
 - Uygulama ikonu, menü çubuğu simgesi ve boş ekranlardaki "nefes alan" mühür aynı sistemden gelir.
 
-Tasarım dili mürekkep, parşömen ve tek bir vurgu rengine (verdigris) dayanır. Başlıklarda serif yazı tipi, terminalde görünen her şeyde monospace kullanılır. Hareketler macOS'un "Hareketi azalt" ayarına uyar.
+Görünüm temalarla değişir (Ayarlar → Görünüm). Varsayılan **Gece**: derin lacivert zemin, köşelerde hafif ışıltı, cam kartlar ve mühür gibi basılan, tek renk ailesinden gradyanlı ana butonlar. **Mürekkep** teması Sigil'in ilk kimliğini korur: parşömen zemin ve serif başlıklar. Terminalde görünen her şey monospace yazılır. Hareketler macOS'un "Hareketi azalt" ayarına uyar.
 
 ## Kurulum
 
@@ -206,11 +209,19 @@ swift test                    # birim testleri + 127.0.0.1'de geçici sshd'ye ka
 open build/Sigil.app
 ```
 
+Kurulu Sigil'in yerine o anki kodu (aynı sunucular ve ayarlarla) açmak için:
+
+```bash
+./scripts/try-local.sh
+```
+
 Gerçek `~/.ssh` klasörüne dokunmadan denemek için:
 
 ```bash
 SIGIL_SANDBOX=/tmp/sd-try build/Sigil.app/Contents/MacOS/Sigil
 ```
+
+Her özelliği gerçek bir sunucuya benzeyen bir şeye karşı denemek için Docker'da atılabilir bir Ubuntu 24.04 sunucusu (systemd, nginx, ufw, fail2ban, Docker) hazır: `scripts/test-server/start.sh` (ayrıntılar [scripts/test-server/README.md](scripts/test-server/README.md)).
 
 <details>
 <summary>Teknik güvenlik notları</summary>
