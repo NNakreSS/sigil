@@ -39,6 +39,7 @@ struct TerminalFindBar: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .environment(\.colorScheme, TerminalTheme.colorScheme)
+        .tint(TerminalTheme.accent)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(TerminalTheme.panelStroke))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
         .onAppear { focused = true }
@@ -133,6 +134,7 @@ struct CommandPalette: View {
         .frame(width: 600)
         .background(TerminalTheme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .environment(\.colorScheme, TerminalTheme.colorScheme)
+        .tint(TerminalTheme.accent)
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(TerminalTheme.panelStroke))
         .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         .onAppear { focused = true }
@@ -487,6 +489,7 @@ struct ExplainPanel: View {
         }
         .shadow(color: .black.opacity(TerminalTheme.isLight ? 0.15 : 0.45), radius: 22, y: 10)
         .environment(\.colorScheme, TerminalTheme.colorScheme)
+        .tint(TerminalTheme.accent)
         .onExitCommand { terminals.explaining = nil }
         .task(id: text) { await load() }
     }
