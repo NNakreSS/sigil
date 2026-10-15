@@ -31,6 +31,10 @@ public struct ServerHealth: Codable, Hashable, Sendable {
     public var rebootPackages: [String]?
     /// Packages with a pending security update, first 20.
     public var securityPackages: [String]?
+    /// `ID ID_LIKE` from os-release, e.g. "ubuntu debian".
+    public var osFamily: String?
+    /// Which of `CommandLibrary.probedTools` are installed; drives the command palette.
+    public var tools: [String]?
     public var certificates: [Certificate]
 
     public var diskUsage: Double? {
@@ -82,7 +86,7 @@ public struct HealthSample: Codable, Hashable, Sendable {
 enum HealthScript {
     /// Sent on stdin to `sh -s`. Reads only; every probe tolerates its tool being absent.
     static let source = #"""
-    if [ -r /etc/os-release ]; then . /etc/os-release; echo "os=$PRETTY_NAME"; else echo "os=$(uname -sr)"; fi
+    if [ -r /etc/os-release ]; then . /etc/os-release; echo "os=$PRETTY_NAME"; echo "osid=$ID $ID_LIKE"; else echo "os=$(uname -sr)"; fi
     [ -r /proc/uptime ] && echo "uptime=$(cut -d' ' -f1 /proc/uptime)"
     [ -r /proc/loadavg ] && echo "load=$(cut -d' ' -f1-3 /proc/loadavg)"
     command -v nproc >/dev/null 2>&1 && echo "cpus=$(nproc)"
@@ -95,6 +99,7 @@ enum HealthScript {
       | awk '{d=""; for (i = 5; i <= NF; i++) d = d (i > 5 ? " " : "") $i; print "failedunit=" $1 "|" d}'
     [ -r /var/run/reboot-required.pkgs ] && sort -u /var/run/reboot-required.pkgs | head -n 10 | sed 's/^/rebootpkg=/'
     command -v apt >/dev/null 2>&1 && apt list --upgradable 2>/dev/null | awk -F/ '/-security/{print "secpkg=" $1}' | head -n 20
+    for t in \#(CommandLibrary.probedTools.joined(separator: " ")); do command -v "$t" >/dev/null 2>&1 && echo "tool=$t"; done
     for c in /etc/letsencrypt/live/*/cert.pem; do
       [ -r "$c" ] && echo "cert=$(basename "$(dirname "$c")")|$(openssl x509 -enddate -noout -in "$c" 2>/dev/null | cut -d= -f2)"
     done
@@ -128,6 +133,8 @@ enum HealthScript {
                 if let name = parts.first, !name.isEmpty {
                     h.failedUnitList = (h.failedUnitList ?? []) + [ServerHealth.FailedUnit(name: name, description: parts.count > 1 ? parts[1] : "")]
                 }
+            case "osid": h.osFamily = value.nilIfEmpty
+            case "tool": if !value.isEmpty { h.tools = (h.tools ?? []) + [value] }
             case "rebootpkg": if !value.isEmpty { h.rebootPackages = (h.rebootPackages ?? []) + [value] }
             case "secpkg": if !value.isEmpty { h.securityPackages = (h.securityPackages ?? []) + [value] }
             case "cert":
