@@ -686,7 +686,7 @@ public final class DeckModel {
     public func harden(_ id: UUID, plan: HardeningPlan, progress: @MainActor (String) -> Void = { _ in }) async throws -> HardeningOutcome {
         guard let s = server(id) else { throw DeckError.notFound }
         guard busy[id] == nil else { throw DeckError.busy }
-        busy[id] = "Sertleştiriliyor"
+        busy[id] = "Güvenlik güçlendiriliyor"
         defer { busy[id] = nil }
         // Reads, applying and installing share the approved connection (one Touch ID); the confirmation below must
         // be a brand-new login, or a lock-out would go unnoticed.
@@ -723,10 +723,10 @@ public final class DeckModel {
                 let back = (try? await remote.ping(target: target, auth: a)) != nil
                 let message = back ? "Değişiklik doğrulanamadı ve sunucu eski ayarlara döndü; erişim yerinde."
                                    : "Değişiklik doğrulanamadı; sunucu geri alma yaptı ama erişim henüz doğrulanamadı."
-                log(id, .error, "Sertleştirme geri alındı: \(message)")
+                log(id, .error, "Güvenlik güçlendirme geri alındı: \(message)")
                 return .rolledBack(message)
             }
-            log(id, .info, "Sertleştirme uygulandı ve doğrulandı: " + [
+            log(id, .info, "Güvenlik güçlendirildi ve doğrulandı: " + [
                 plan.disablePasswordLogin ? "şifreyle giriş kapatıldı" : nil,
                 plan.restrictRootLogin ? (state.isRoot ? "root yalnızca anahtarla" : "root girişi kapatıldı") : nil,
                 plan.enableFirewall ? "firewall açıldı" : nil,

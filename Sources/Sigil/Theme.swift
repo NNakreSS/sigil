@@ -326,7 +326,7 @@ enum HelpTopic {
         case .connection: return "Bağlantı"
         case .logins: return "Sunucudaki son girişler"
         case .events: return "Geçmiş"
-        case .hardening: return "Sertleştirme"
+        case .hardening: return "Güvenliği güçlendirme"
         case .quickActions: return "Hızlı eylemler"
         case .jumpServer: return "Üzerinden bağlanmak"
         case .keyStore: return "Anahtar nerede durur?"
@@ -394,7 +394,7 @@ enum HelpTopic {
         case .logins:
             return "Sunucunun kendi kaydı (last komutu): kim, nereden, ne zaman girdi. Sigil dışından, başka bilgisayarlardan yapılan girişler de burada görünür; tanımadığın bir IP görürsen anahtarları yenile."
         case .events:
-            return "Bu sunucuda Sigil’in yaptığı her şeyin kaydı: eklenme, anahtar yenileme, sertleştirme, erişim verme, uyarılar. Kayıtlar yalnızca bu Mac’te tutulur."
+            return "Bu sunucuda Sigil’in yaptığı her şeyin kaydı: eklenme, anahtar yenileme, güvenlik güçlendirme, erişim verme, uyarılar. Kayıtlar yalnızca bu Mac’te tutulur."
         case .hardening:
             return "Şifreli girişi ve root ile şifreli girişi kapatır, güvenlik duvarını (ufw) ve kaba kuvvet korumasını (fail2ban) kurar, otomatik güvenlik güncellemelerini açar. Girişi etkileyen her değişiklik sunucuda bir bekçiyle uygulanır: Sigil 45 saniye içinde yeni bir bağlantıyla doğrulayamazsa sunucu değişikliği kendisi geri alır, yani dışarıda kalmazsın."
         case .quickActions:

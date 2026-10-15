@@ -46,7 +46,7 @@ struct TourSheet: View {
              points: [("Sağlık: disk, bellek, çöken servisler, güncellemeler, SSL", nil),
                       ("Güncelle: önce listeyi gör, sonra terminalde canlı izle", nil),
                       ("Yeniden başlat: geri gelene kadar bekler", nil),
-                      ("Sertleştir: şifreli girişi kapat, güvenlik duvarı kur; hata olursa sunucu kendini geri alır", nil),
+                      ("Güvenliği güçlendir: şifreli girişi kapat, güvenlik duvarı kur; hata olursa sunucu kendini geri alır", nil),
                       ("Sigil dışından eklenmiş anahtarları gör ve kaldır", nil)]),
         Page(symbol: "square.grid.2x2", tint: .accentInk, title: "Dosyalar, Docker, tüneller, erişim",
              lead: "Sunucu ekranındaki butonlardan.",
@@ -206,7 +206,7 @@ struct NextStepsCard: View {
 
     var body: some View {
         if Self.shouldShow(server, hidden: hiddenIDs) {
-            let hardened = server.events.contains { $0.message.hasPrefix("Sertleştirme uygulandı") }
+            let hardened = server.events.contains { $0.message.hasPrefix("Güvenlik güçlendirildi") || $0.message.hasPrefix("Sertleştirme uygulandı") }
             let connected = router.terminals.sessions.contains { $0.serverID == server.id }
                 || UserDefaults.standard.stringArray(forKey: "connectedServers")?.contains(server.id.uuidString) == true
             Card(title: "Sırada ne var?", systemImage: "sparkles") {
@@ -215,7 +215,7 @@ struct NextStepsCard: View {
                     step(connected, "Bağlan ve terminalde ⌘P ile komut paletini dene", ("Bağlan", { router.connect(server) }))
                     step(server.health != nil, "Sağlığını ölç: disk, bellek, güncellemeler, çöken servisler",
                          ("Ölç", { Task { try? await model.collectHealth(server.id) } }))
-                    step(hardened, "Sertleştir: şifreli girişi kapat, güvenlik duvarı ve fail2ban kur", ("Sertleştir…", harden))
+                    step(hardened, "Güvenliği güçlendir: şifreli girişi kapat, güvenlik duvarı ve fail2ban kur", ("Güçlendir…", harden))
                     step(!(server.grants ?? []).isEmpty, "İstersen bir arkadaşına kendi anahtarıyla erişim ver (isteğe bağlı)", ("Erişim ver…", grant))
                 }
                 HStack {

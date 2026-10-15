@@ -141,7 +141,7 @@ Kodda bunların dışında yalnızca **sen açarsan** çalışan ağ istekleri v
 <br>
 
 - Secure Enclave ve 1Password anahtarları Touch ID olmadan kullanılamaz. Keychain anahtarları Mac'in kilidiyle korunur.
-- Secure Enclave anahtarı Mac'e bağlıdır, yedeklenemez. Mac kaybolursa sunucuya şifrenle girip yeni bir anahtar eklersin. Bu yüzden **Sertleştirme** sihirbazı bu sunucularda şifreli girişi varsayılan olarak açık bırakır.
+- Secure Enclave anahtarı Mac'e bağlıdır, yedeklenemez. Mac kaybolursa sunucuya şifrenle girip yeni bir anahtar eklersin. Bu yüzden **Güvenliği güçlendir** sihirbazı bu sunucularda şifreli girişi varsayılan olarak açık bırakır.
 - **Acil durum** (⌥⇧⌘R) tek tıkla bütün sunucularda anahtarı yeniler. Eski anahtarlar sunuculardan silinir.
 - Yenileme hiçbir zaman seni dışarıda bırakmaz. Önce yeni anahtar kurulur, yeni anahtarla giriş doğrulanır, ancak ondan sonra eskisi kaldırılır.
 </details>
@@ -151,14 +151,14 @@ Kodda bunların dışında yalnızca **sen açarsan** çalışan ağ istekleri v
 - Aynı macOS kullanıcısıyla çalışan zararlı bir yazılım, Keychain seçeneğinde anahtarlara ulaşabilir. Secure Enclave ve 1Password her kullanımda onay istediği için bu konuda daha güçlüdür.
 - Secure Enclave seçeneği macOS 26 ve Touch ID'li bir Mac gerektirir. Diğer Mac'lerde 1Password ya da Keychain kullanılır.
 - Secure Enclave anahtarını silmek Touch ID istemez. Mac'ine erişen biri anahtarı kullanamaz ama silebilir; bu durumda sunucuya şifrenle girersin.
-- İlk kurulum için sunucuda şifreyle girişin açık olması gerekir. Kurulumdan sonra **Sertleştirme** sihirbazıyla kapatabilirsin.
+- İlk kurulum için sunucuda şifreyle girişin açık olması gerekir. Kurulumdan sonra **Güvenliği güçlendir** sihirbazıyla kapatabilirsin.
 
 ## Özellikler
 
 | | |
 |---|---|
 | **Üç anahtar deposu** | Sunucu başına Secure Enclave (Mac'in güvenlik çipi, girişte Touch ID), 1Password (onayla) ya da macOS Keychain (tam otomatik yenileme). |
-| **Onay penceresi** | Bir Touch ID onayı seçtiğin süre (varsayılan 15 dakika) aynı sunucuya açılan bağlantıları kapsar: Sigil, terminal sekmeleri ve Terminal'den `ssh`. Ekran kilitlenince, Mac uyuyunca ya da menü çubuğundaki kilitle hemen biter. Anahtar yenileme ve sertleştirme doğrulaması her zaman yeni onay ister. |
+| **Onay penceresi** | Bir Touch ID onayı seçtiğin süre (varsayılan 15 dakika) aynı sunucuya açılan bağlantıları kapsar: Sigil, terminal sekmeleri ve Terminal'den `ssh`. Ekran kilitlenince, Mac uyuyunca ya da menü çubuğundaki kilitle hemen biter. Anahtar yenileme ve güvenlik güçlendirme doğrulaması her zaman yeni onay ister. |
 | **Kilitlenmeyen yenileme** | Yeni anahtarla giriş doğrulanmadan eskisi silinmez. 1Password anahtarları için bildirim ve tek tıkla yenileme. |
 | **Gömülü terminal** | Sekmeli terminal, ⌘1…9 ile geçiş, yan yana bölme (⌘D), geçmişte arama (⌘F), yazı boyutu, 8 renk teması, yazı tipi ve imleç ayarları. İstersen Terminal, iTerm2, Ghostty veya Warp. |
 | **Komut paleti (⌘P)** | Türkçe açıklamalı 134 hazır komut; sunucuda neler kurulu olduğuna göre süzülür (Docker yoksa Docker komutları çıkmaz). Boşluklu komutlar önce değerleri sorar, sistemi değiştirenler işaretlidir. |
@@ -174,7 +174,7 @@ Kodda bunların dışında yalnızca **sen açarsan** çalışan ağ istekleri v
 | **Yabancı anahtar denetimi** | `authorized_keys` içindeki tanımadığın anahtarlar listelenir. Tek tıkla kaldırılabilir. |
 | **Host key izleme** | Sunucunun kimliği değişirse alarm verilir, bağlantı durur. |
 | **Sağlık paneli** | Disk, bellek, yük, bekleyen güncellemeler (hangi paketler), çöken servisler (hangileri), yeniden başlatmayı isteyen paketler, SSL bitiş tarihleri. Sorun çıkınca bildirim gelir. |
-| **Sertleştirme sihirbazı** | Şifreli girişi ve root girişini kısıtlar; ufw, fail2ban ve otomatik güvenlik güncellemelerini kurar. Sunucudaki bir bekçi süreç, Sigil 45 saniye içinde yeni bir bağlantıyla doğrulamazsa her şeyi geri alır. |
+| **Güvenliği güçlendir** | Şifreli girişi ve root girişini kısıtlar; ufw, fail2ban ve otomatik güvenlik güncellemelerini kurar. Sunucudaki bir bekçi süreç, Sigil 45 saniye içinde yeni bir bağlantıyla doğrulamazsa her şeyi geri alır. |
 | **Tüneller** | Sunucudaki, dışarıya kapalı bir servisi (veritabanı, Redis, yönetim paneli) şifreli SSH üzerinden Mac'ine getirir: `localhost:15432 → sunucuda 5432`. Sunucuda port açılmaz; tek tıkla açılır, Sigil kapanınca kapanır. |
 | **Hızlı eylemler** | Kayıtlı komutlar birden çok sunucuda paralel çalışır, çıktılar ayrı gösterilir. |
 | **ProxyJump** | Bastion sunucusu üzerinden bağlantı; host key taraması da bastion üzerinden yapılır. |

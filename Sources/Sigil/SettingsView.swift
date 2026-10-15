@@ -224,7 +224,7 @@ private struct KeySettings: View {
             .onChange(of: approvalWindow) { _, m in model.approvalWindowMinutes = m }
             Text(approvalWindow == 0
                  ? "Secure Enclave ve 1Password anahtarları her bağlantıda onay ister."
-                 : "Bir sunucuya onay verdikten sonra, bu süre boyunca aynı sunucuya açılan bağlantılar (Sigil, terminal sekmeleri, Terminal’den ssh) tekrar sormaz. Ekran kilitlenince, Mac uyuyunca ya da Sigil kapanınca hemen sona erer. Anahtar yenileme ve sertleştirme her zaman yeni bir onay ister.")
+                 : "Bir sunucuya onay verdikten sonra, bu süre boyunca aynı sunucuya açılan bağlantılar (Sigil, terminal sekmeleri, Terminal’den ssh) tekrar sormaz. Ekran kilitlenince, Mac uyuyunca ya da Sigil kapanınca hemen sona erer. Anahtar yenileme ve güvenlik güçlendirme her zaman yeni bir onay ister.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             LabeledContent("1Password") {
                 HStack {

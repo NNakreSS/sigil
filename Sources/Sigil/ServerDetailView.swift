@@ -191,7 +191,7 @@ struct ServerDetailView: View {
 
                     Menu {
                         Button("Düzenle…") { showingEdit = true }
-                        Button("Sertleştir…") { showingHardening = true }
+                        Button("Güvenliği Güçlendir…") { showingHardening = true }
                         Button("Erişim Ver…") { showingGrant = true }
                         Button("IP İzin Listesi…") { showingAllowList = true }
                         Button("Bağlantıyı Test Et") { Task { await model.checkStatus(s.id, interactive: true) } }
