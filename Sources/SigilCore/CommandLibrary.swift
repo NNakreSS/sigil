@@ -327,3 +327,51 @@ public enum CommandLibrary {
         .init("Sistem cron klasörleri", "ls -l /etc/cron.d /etc/cron.daily", .cron),
     ]
 }
+
+/// Tab completion at the shell prompt: what has been typed, and the command it most likely continues into.
+public enum CommandCompletion {
+    public struct Candidate: Hashable, Sendable {
+        /// What ends up typed after completing (up to the first blank of a template).
+        public let text: String
+        /// Shown in the hint: the whole command, blanks as ‹name›.
+        public let display: String
+        public let title: String
+
+        public init(text: String, display: String, title: String) {
+            self.text = text
+            self.display = display
+            self.title = title
+        }
+    }
+
+    /// Candidates for a server: the user's saved commands, then the library commands that fit it.
+    public static func candidates(saved: [QuickAction], profile: ServerProfile?) -> [Candidate] {
+        var seen = Set<String>()
+        let all = saved.map { Candidate(text: $0.command, display: $0.command, title: $0.name) }
+            + CommandLibrary.relevant(for: profile).map {
+                Candidate(text: $0.typedPrefix,
+                          display: $0.template.replacingOccurrences(of: "{{", with: "‹").replacingOccurrences(of: "}}", with: "›"),
+                          title: $0.title)
+            }
+        return all.filter { seen.insert($0.text).inserted }
+    }
+
+    /// The command typed so far on a prompt line, or nil when this does not look like a prompt with the cursor at
+    /// the end of the input (text after the cursor, no "$ " / "# " prompt marker).
+    public static func typedInput(beforeCursor: String, afterCursor: String) -> String? {
+        guard afterCursor.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let dollar = beforeCursor.range(of: "$ ", options: .backwards)
+        let hash = beforeCursor.range(of: "# ", options: .backwards)
+        guard let marker = [dollar, hash].compactMap({ $0 }).max(by: { $0.upperBound < $1.upperBound }) else { return nil }
+        let input = String(beforeCursor[marker.upperBound...])
+        return input.trimmingCharacters(in: .whitespaces).isEmpty ? nil : input
+    }
+
+    /// Shortest candidate that continues `input` (at least two characters typed).
+    public static func best(for input: String, in candidates: [Candidate]) -> Candidate? {
+        guard input.count >= 2 else { return nil }
+        return candidates
+            .filter { $0.text.hasPrefix(input) && $0.text.count > input.count }
+            .min { $0.text.count < $1.text.count }
+    }
+}

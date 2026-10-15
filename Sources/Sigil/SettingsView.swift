@@ -11,7 +11,7 @@ struct SettingsView: View {
             KeySettings().tabItem { Label("Anahtarlar", systemImage: "key") }
             UpdateSettings(updater: updater).tabItem { Label("Güncellemeler", systemImage: "arrow.down.circle") }
         }
-        .frame(width: 560, height: 380)
+        .frame(width: 620, height: 560)
     }
 }
 
@@ -50,27 +50,127 @@ private struct GeneralSettings: View {
 }
 
 private struct TerminalSettings: View {
+    @Environment(AppRouter.self) private var router
     @AppStorage("terminalApp") private var terminalApp = TerminalApp.preferred.rawValue
+    private let appearance = TerminalAppearance.shared
 
     var body: some View {
+        @Bindable var appearance = appearance
+        @Bindable var terminals = router.terminals
         Form {
-            Picker("Bağlanınca aç", selection: $terminalApp) {
-                ForEach(TerminalApp.allCases) { app in
-                    Text(app.isAvailable ? app.title : "\(app.title) (kurulu değil)").tag(app.rawValue)
-                        .disabled(!app.isAvailable)
+            Section {
+                Picker("Bağlanınca aç", selection: $terminalApp) {
+                    ForEach(TerminalApp.allCases) { app in
+                        Text(app.isAvailable ? app.title : "\(app.title) (kurulu değil)").tag(app.rawValue)
+                            .disabled(!app.isAvailable)
+                    }
                 }
             }
-            Text("Uygulama içi terminal sekmeli çalışır: sunucular arasında tek tıkla ya da ⌘1…9 ile geçersin. Dış terminaller kendi pencerelerinde açılır.")
-                .font(.caption).foregroundStyle(.secondary)
-            LabeledContent("Kısayollar") {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("⌘T bağlan · ⌘J terminaller · ⌘0 genel bakış")
-                    Text("⇧⌘] / ⇧⌘[ sekme değiştir · ⇧⌘W sekmeyi kapat")
+
+            Section("Görünüm") {
+                TerminalPreview(fontSize: terminals.fontSize)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                    ForEach(TerminalPalette.all) { p in
+                        PaletteSwatch(palette: p, selected: p.id == appearance.paletteID) { appearance.paletteID = p.id }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section("Yazı") {
+                Picker("Yazı tipi", selection: $appearance.fontFamily) {
+                    Text("Sistem (SF Mono)").tag("")
+                    Divider()
+                    ForEach(TerminalAppearance.monospacedFamilies, id: \.self) { Text($0).font(.custom($0, size: 12)).tag($0) }
+                }
+                LabeledContent("Boyut") {
+                    HStack {
+                        Slider(value: $terminals.fontSize, in: 9...24, step: 1).frame(width: 200)
+                        Text("\(Int(terminals.fontSize)) pt").monospacedDigit().frame(width: 44, alignment: .trailing)
+                    }
+                }
+            }
+
+            Section("İmleç ve klavye") {
+                Picker("İmleç", selection: $appearance.cursor) {
+                    ForEach(TerminalAppearance.Cursor.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Toggle("İmleç yanıp sönsün", isOn: $appearance.cursorBlinks)
+                Toggle("⌥ tuşu Meta olarak çalışsın", isOn: $appearance.optionAsMeta)
+                Text("Açıkken ⌥B / ⌥F gibi kabuk kısayolları çalışır, ama ⌥ ile yazılan @ € gibi karakterler yazılamaz.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Yazarken komut öner, Tab ile tamamla", isOn: $appearance.suggestions)
+            }
+
+            Section("Kısayollar") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("⌘P komut paleti · ⌘F bul · ⌘G sonraki · ⌥⌘K temizle")
+                    Text("⌘+ / ⌘- yazı boyutu · ⌥⌘0 sıfırla · ⌘D yan yana böl · ⇧⌘D birleştir")
+                    Text("⌘T bağlan · ⌘J terminaller · ⌘0 genel bakış · ⌘1…9 sekmeler")
                 }
                 .font(.caption.monospaced())
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// A few lines of a shell session in the chosen palette, font and size.
+private struct TerminalPreview: View {
+    let fontSize: CGFloat
+
+    var body: some View {
+        let a = TerminalAppearance.shared
+        let p = a.palette
+        let c = { (i: Int) in Color(nsColor: TerminalPalette.color(p.ansi[i])) }
+        let font = Font(a.font(size: fontSize))
+        VStack(alignment: .leading, spacing: 2) {
+            (Text("root@sunucu").foregroundColor(c(2)) + Text(":").foregroundColor(c(7)) + Text("~").foregroundColor(c(4))
+             + Text("# ").foregroundColor(c(7)) + Text("systemctl status nginx").foregroundColor(Color(nsColor: TerminalPalette.color(p.foreground))))
+            (Text("● ").foregroundColor(c(10)) + Text("nginx.service").foregroundColor(Color(nsColor: TerminalPalette.color(p.foreground)))
+             + Text(" — active (running)").foregroundColor(c(2)))
+            (Text("uyarı: ").foregroundColor(c(3)) + Text("disk %91 dolu").foregroundColor(c(1)))
+            HStack(spacing: 0) {
+                Text("root@sunucu:~# ").foregroundColor(c(2))
+                Rectangle().fill(Color(nsColor: TerminalPalette.color(p.cursor)))
+                    .frame(width: a.cursor == .bar ? 2 : fontSize * 0.6, height: a.cursor == .underline ? 2 : fontSize * 1.15)
+                    .frame(height: fontSize * 1.15, alignment: .bottom)
+            }
+        }
+        .font(font)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(nsColor: TerminalPalette.color(p.background)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct PaletteSwatch: View {
+    let palette: TerminalPalette
+    let selected: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 3) {
+                    ForEach([1, 2, 3, 4, 5, 6], id: \.self) { i in
+                        Circle().fill(Color(nsColor: TerminalPalette.color(palette.ansi[i]))).frame(width: 9, height: 9)
+                    }
+                }
+                Text(palette.name).font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(nsColor: TerminalPalette.color(palette.foreground)))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(Color(nsColor: TerminalPalette.color(palette.background)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(selected ? Color.accentInk : Color.hairline, lineWidth: selected ? 2.5 : 1))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(palette.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

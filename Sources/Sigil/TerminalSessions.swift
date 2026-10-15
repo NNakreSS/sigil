@@ -17,6 +17,8 @@ final class TerminalSession: Identifiable {
     var generation = 0
     /// Run this on the server instead of a login shell (`ssh -t <alias> <command>`), e.g. an update.
     let remoteCommand: String?
+    /// The command the prompt input most likely continues into; Tab completes it.
+    var suggestion: TerminalSuggestion?
     /// The live terminal view; kept alive while switching tabs so the session keeps its scrollback.
     @ObservationIgnored var host: NSView?
 
@@ -138,6 +140,12 @@ final class TerminalSessions {
     }
 }
 
+struct TerminalSuggestion: Equatable {
+    let input: String
+    let candidate: CommandCompletion.Candidate
+    var remainder: String { String(candidate.text.dropFirst(input.count)) }
+}
+
 struct TerminalSplit: Equatable {
     let left: UUID
     let right: UUID
@@ -194,10 +202,18 @@ struct TerminalWorkspaceView: View {
         }
     }
 
+    /// Reading every setting here makes SwiftUI refresh the panes when one changes.
+    private var appearanceKey: String {
+        let a = TerminalAppearance.shared
+        return [a.paletteID, a.fontFamily, a.cursor.rawValue, "\(a.cursorBlinks)", "\(a.optionAsMeta)"].joined(separator: "|")
+    }
+
     private func pane(_ s: TerminalSession, isActive: Bool, split: Bool) -> some View {
         TerminalHost(session: s, configFile: terminals.configFile, fontSize: terminals.fontSize,
                      wantsFocus: isActive && !terminals.showingFind && !terminals.showingPalette,
-                     onFocus: { if terminals.activeID != s.id { terminals.activeID = s.id; router.selection = s.serverID } })
+                     onFocus: { if terminals.activeID != s.id { terminals.activeID = s.id; router.selection = s.serverID } },
+                     appearanceKey: appearanceKey,
+                     completions: completions(for: s))
             .id("\(s.id.uuidString)-\(s.generation)")
             // Breathing room from the sidebar and tab strip; the ZStack fills it with the terminal colour.
             .padding(.leading, 16).padding(.trailing, 8).padding(.top, 10).padding(.bottom, 8)
@@ -207,9 +223,18 @@ struct TerminalWorkspaceView: View {
                 }
             }
             .opacity(split && !isActive ? 0.78 : 1)
+            .overlay(alignment: .bottomLeading) {
+                if isActive, let suggestion = s.suggestion { SuggestionHint(suggestion: suggestion).padding(10) }
+            }
             .overlay {
                 if s.exited { exitedOverlay(s) }
             }
+            .animation(Motion.quick, value: s.suggestion)
+    }
+
+    private func completions(for s: TerminalSession) -> [CommandCompletion.Candidate] {
+        guard TerminalAppearance.shared.suggestions, s.remoteCommand == nil else { return [] }
+        return CommandCompletion.candidates(saved: model.actions, profile: ServerProfile(model.server(s.serverID)?.health))
     }
 
     private var tabStrip: some View {
@@ -316,22 +341,6 @@ private struct TerminalTab: View {
     }
 }
 
-/// Terminal colours: the ink/parchment language carried into the shell.
-enum TerminalTheme {
-    static let background = NSColor(srgbRed: 0x17 / 255, green: 0x15 / 255, blue: 0x2E / 255, alpha: 1)
-    static let chrome = NSColor(srgbRed: 0x11 / 255, green: 0x10 / 255, blue: 0x24 / 255, alpha: 1)
-    static let foreground = NSColor(srgbRed: 0xEE / 255, green: 0xEB / 255, blue: 0xE2 / 255, alpha: 1)
-    static let caret = NSColor(srgbRed: 0x5D / 255, green: 0xCA / 255, blue: 0xA5 / 255, alpha: 1)
-    static let selection = NSColor(srgbRed: 0x53 / 255, green: 0x4A / 255, blue: 0xB7 / 255, alpha: 0.55)
-    /// ANSI 0–15.
-    static let ansi: [(UInt16, UInt16, UInt16)] = [
-        (0x1B, 0x19, 0x36), (0xE0, 0x6C, 0x4A), (0x5D, 0xCA, 0xA5), (0xEF, 0xB7, 0x5A),
-        (0x85, 0x9E, 0xF0), (0xC3, 0x8B, 0xE8), (0x6F, 0xC8, 0xD8), (0xD8, 0xD4, 0xC8),
-        (0x5A, 0x55, 0x80), (0xF0, 0x99, 0x7B), (0x9F, 0xE1, 0xCB), (0xFA, 0xC7, 0x75),
-        (0xAF, 0xBE, 0xF6), (0xDA, 0xB4, 0xF2), (0x9C, 0xDF, 0xEA), (0xFF, 0xFD, 0xF8),
-    ]
-}
-
 #if canImport(SwiftTerm)
 import SwiftTerm
 
@@ -344,19 +353,17 @@ struct TerminalHost: NSViewRepresentable {
     var wantsFocus = true
     /// A click landed in this pane.
     var onFocus: () -> Void = {}
+    /// Changes whenever a terminal setting does, so SwiftUI calls updateNSView.
+    var appearanceKey = ""
+    /// What Tab may complete at the prompt (empty: suggestions off).
+    var completions: [CommandCompletion.Candidate] = []
 
     func makeNSView(context: Context) -> NSView {
-        context.coordinator.watchClicks()
+        context.coordinator.startWatching()
         if let existing = session.host { return existing }
         let view = LocalProcessTerminalView(frame: .zero)
         view.processDelegate = context.coordinator
-        view.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        view.nativeBackgroundColor = TerminalTheme.background
-        view.nativeForegroundColor = TerminalTheme.foreground
-        view.caretColor = TerminalTheme.caret
-        view.selectedTextBackgroundColor = TerminalTheme.selection
-        view.installColors(TerminalTheme.ansi.map { SwiftTerm.Color(red8: $0.0, green8: $0.1, blue8: $0.2) })
-        view.optionAsMetaKey = false
+        Self.apply(to: view, fontSize: fontSize)
 
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
@@ -373,10 +380,38 @@ struct TerminalHost: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.view = view
         context.coordinator.onFocus = onFocus
-        if let term = view as? LocalProcessTerminalView, term.font.pointSize != fontSize {
-            term.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        context.coordinator.completions = completions
+        if completions.isEmpty, session.suggestion != nil { session.suggestion = nil }
+        let key = "\(appearanceKey)|\(fontSize)"
+        if let term = view as? LocalProcessTerminalView, context.coordinator.appliedKey != key {
+            context.coordinator.appliedKey = key
+            Self.apply(to: term, fontSize: fontSize)
         }
         if wantsFocus { DispatchQueue.main.async { view.window?.makeFirstResponder(view) } }
+    }
+
+    /// Colours, font, cursor and keyboard from the user's terminal settings.
+    @MainActor
+    static func apply(to view: LocalProcessTerminalView, fontSize: CGFloat) {
+        let a = TerminalAppearance.shared
+        view.font = a.font(size: fontSize)
+        view.nativeBackgroundColor = TerminalTheme.background
+        view.nativeForegroundColor = TerminalTheme.foreground
+        view.caretColor = TerminalTheme.caret
+        view.selectedTextBackgroundColor = TerminalTheme.selection
+        view.installColors(TerminalTheme.ansi.map { SwiftTerm.Color(red8: $0.0, green8: $0.1, blue8: $0.2) })
+        view.optionAsMetaKey = a.optionAsMeta
+        let style: CursorStyle
+        switch (a.cursor, a.cursorBlinks) {
+        case (.block, true): style = .blinkBlock
+        case (.block, false): style = .steadyBlock
+        case (.bar, true): style = .blinkBar
+        case (.bar, false): style = .steadyBar
+        case (.underline, true): style = .blinkUnderline
+        case (.underline, false): style = .steadyUnderline
+        }
+        view.getTerminal().setCursorStyle(style)
+        view.needsDisplay = true
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.stopWatching() }
@@ -391,24 +426,70 @@ struct TerminalHost: NSViewRepresentable {
         let session: TerminalSession
         weak var view: NSView?
         var onFocus: () -> Void = {}
-        private var monitor: Any?
+        var appliedKey = ""
+        var completions: [CommandCompletion.Candidate] = []
+        private var clickMonitor: Any?
+        private var keyMonitor: Any?
+        private var timer: Timer?
         init(session: TerminalSession) { self.session = session }
 
         /// The terminal view swallows mouse events, so a SwiftUI tap gesture never fires; watch clicks instead.
-        func watchClicks() {
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+        /// Tab is watched too: with a suggestion showing it completes it, otherwise it goes to the shell as usual.
+        func startWatching() {
+            guard clickMonitor == nil else { return }
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 if let self, let view = self.view, event.window === view.window,
                    view.bounds.contains(view.convert(event.locationInWindow, from: nil)) {
                     self.onFocus()
                 }
                 return event
             }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.keyCode == 48,
+                      event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty,
+                      let view = self.view as? LocalProcessTerminalView, view.window?.firstResponder === view,
+                      let suggestion = self.session.suggestion, self.currentInput(view) == suggestion.input
+                else { return event }
+                view.send(data: ArraySlice(Array(suggestion.remainder.utf8)))
+                self.session.suggestion = nil
+                return nil
+            }
+            timer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshSuggestion() }
+            }
         }
 
         func stopWatching() {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-            monitor = nil
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            timer?.invalidate()
+            clickMonitor = nil
+            keyMonitor = nil
+            timer = nil
+        }
+
+        /// What is typed after the prompt on the cursor's line (not in full-screen programs like vim or less).
+        func currentInput(_ view: LocalProcessTerminalView) -> String? {
+            let t = view.getTerminal()
+            guard !t.isCurrentBufferAlternate else { return nil }
+            let (x, y) = t.getCursorLocation()
+            guard let line = t.getLine(row: y) else { return nil }
+            return CommandCompletion.typedInput(beforeCursor: line.translateToString(trimRight: false, startCol: 0, endCol: x),
+                                                afterCursor: line.translateToString(trimRight: true, startCol: x))
+        }
+
+        @MainActor
+        private func refreshSuggestion() {
+            guard let view = view as? LocalProcessTerminalView, !completions.isEmpty,
+                  view.window?.firstResponder === view, NSApp.isActive
+            else {
+                if session.suggestion != nil { session.suggestion = nil }
+                return
+            }
+            let next = currentInput(view).flatMap { input in
+                CommandCompletion.best(for: input, in: completions).map { TerminalSuggestion(input: input, candidate: $0) }
+            }
+            if next != session.suggestion { session.suggestion = next }
         }
 
         func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
@@ -461,6 +542,8 @@ struct TerminalHost: View {
     var fontSize: CGFloat = TerminalSessions.defaultFontSize
     var wantsFocus = true
     var onFocus: () -> Void = {}
+    var appearanceKey = ""
+    var completions: [CommandCompletion.Candidate] = []
     var body: some View { Text("Gömülü terminal bu derlemede yok.").foregroundStyle(.secondary) }
     static func terminate(_ session: TerminalSession) {}
 }

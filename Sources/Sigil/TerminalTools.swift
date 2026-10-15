@@ -36,8 +36,47 @@ struct TerminalFindBar: View {
     }
 }
 
-/// ⌘P: saved commands, searchable. Return types the command at the prompt (nothing runs until you press Return
-/// in the terminal); ⌘Return types and runs it. An unknown query can be saved as a new command.
+/// One row of the palette: a command the user saved, or one from the library.
+private struct PaletteItem: Identifiable {
+    enum Source { case saved(QuickAction), library(CommandTemplate) }
+    let source: Source
+
+    var id: String {
+        switch source {
+        case .saved(let a): return "saved|" + a.id.uuidString
+        case .library(let c): return "lib|" + c.id
+        }
+    }
+    var title: String {
+        switch source {
+        case .saved(let a): return a.name
+        case .library(let c): return c.title
+        }
+    }
+    var display: String {
+        switch source {
+        case .saved(let a): return a.command
+        case .library(let c): return c.template.replacingOccurrences(of: "{{", with: "‹").replacingOccurrences(of: "}}", with: "›")
+        }
+    }
+    var group: String {
+        switch source {
+        case .saved: return "Kayıtlı komutlarım"
+        case .library(let c): return c.category.rawValue
+        }
+    }
+    var symbol: String {
+        switch source {
+        case .saved: return "star"
+        case .library(let c): return c.category.symbol
+        }
+    }
+    var changesSystem: Bool { if case .library(let c) = source { return c.changesSystem } else { return false } }
+    var template: CommandTemplate? { if case .library(let c) = source { return c } else { return nil } }
+}
+
+/// ⌘P: every command that fits this server, grouped and searchable. Return types the command at the prompt (nothing
+/// runs until you press Return in the terminal); ⌘Return types and runs it. Commands with blanks ask for them first.
 struct CommandPalette: View {
     @Environment(TerminalSessions.self) private var terminals
     @Environment(DeckModel.self) private var model
@@ -45,68 +84,100 @@ struct CommandPalette: View {
     @FocusState private var focused: Bool
     @State private var query = ""
     @State private var selected = 0
+    @State private var filling: CommandTemplate?
+    @State private var values: [String: String] = [:]
+    @FocusState private var field: Int?
 
-    private var matches: [QuickAction] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return model.actions }
-        return model.actions.filter {
-            $0.name.localizedCaseInsensitiveContains(q) || $0.command.localizedCaseInsensitiveContains(q)
+    private var server: Server? { terminals.active.flatMap { model.server($0.serverID) } }
+    private var profile: ServerProfile? { ServerProfile(server?.health) }
+
+    private var items: [PaletteItem] {
+        let saved = model.actions.filter { a in
+            query.isEmpty || a.name.localizedCaseInsensitiveContains(query) || a.command.localizedCaseInsensitiveContains(query)
         }
+        let library = CommandLibrary.search(query, in: CommandLibrary.relevant(for: profile))
+        return saved.map { PaletteItem(source: .saved($0)) } + library.map { PaletteItem(source: .library($0)) }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "command").foregroundStyle(Color.accentInk)
-                TextField("Komut ara ya da yaz", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 16))
-                    .focused($focused)
-                    .onSubmit { choose(run: NSEvent.modifierFlags.contains(.command)) }
-                    .onChange(of: query) { _, _ in selected = 0 }
-            }
-            .padding(14)
-            Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 2) {
-                        ForEach(Array(matches.enumerated()), id: \.element.id) { i, a in
-                            row(a, highlighted: i == selected)
-                                .id(i)
-                                .onTapGesture { selected = i; choose(run: false) }
-                        }
-                        if matches.isEmpty { saveRow }
-                    }
-                    .padding(6)
-                }
-                .frame(maxHeight: 320)
-                .onChange(of: selected) { _, i in withAnimation(Motion.quick) { proxy.scrollTo(i) } }
-            }
-            Divider()
-            HStack(spacing: 14) {
-                hint("⏎", "yaz")
-                hint("⌘⏎", "yaz ve çalıştır")
-                hint("esc", "kapat")
-                Spacer()
-                Button("Komutları düzenle…") { terminals.showingPalette = false; router.showingActions = true }
-                    .buttonStyle(.borderless).font(.caption)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 8)
+            if let filling { form(filling) } else { list }
         }
-        .frame(width: 560)
+        .frame(width: 600)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
         .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         .onAppear { focused = true }
-        .onExitCommand { terminals.showingPalette = false }
-        .onKeyPress(.downArrow) { selected = min(selected + 1, max(matches.count - 1, 0)); return .handled }
+        .onExitCommand {
+            if filling != nil { filling = nil; focused = true } else { terminals.showingPalette = false }
+        }
+    }
+
+    // MARK: List
+
+    private var list: some View {
+        let items = self.items
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "command").foregroundStyle(Color.accentInk)
+                TextField("Ne yapmak istiyorsun? (ör. disk, nginx log, port)", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16))
+                    .focused($focused)
+                    .onSubmit { choose(items, run: NSEvent.modifierFlags.contains(.command)) }
+                    .onChange(of: query) { _, _ in selected = 0 }
+            }
+            .padding(14)
+            if profile == nil, let server {
+                Label("“\(server.alias)” için hangi araçların kurulu olduğu bilinmiyor; tüm komutlar gösteriliyor. Sağlık kartında “Yenile”ye basınca liste sunucuya göre daralır.",
+                      systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 14).padding(.bottom, 8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                            if query.isEmpty, i == 0 || items[i - 1].group != item.group {
+                                Label(item.group, systemImage: item.symbol)
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 10).padding(.top, i == 0 ? 4 : 12).padding(.bottom, 2)
+                            }
+                            row(item, highlighted: i == selected)
+                                .id(item.id)
+                                .onTapGesture { selected = i; choose(items, run: false) }
+                        }
+                        if items.isEmpty { saveRow }
+                    }
+                    .padding(6)
+                }
+                .frame(height: 380)
+                .onChange(of: selected) { _, i in
+                    if items.indices.contains(i) { withAnimation(Motion.quick) { proxy.scrollTo(items[i].id) } }
+                }
+            }
+            Divider()
+            footer
+        }
+        .onKeyPress(.downArrow) { selected = min(selected + 1, max(items.count - 1, 0)); return .handled }
         .onKeyPress(.upArrow) { selected = max(selected - 1, 0); return .handled }
     }
 
-    private func row(_ a: QuickAction, highlighted: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(a.name).font(.callout.weight(.medium))
-            Text(a.command).font(.terminalSmall).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+    private func row(_ item: PaletteItem, highlighted: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title).font(.callout.weight(.medium))
+                Text(item.display).font(.terminalSmall).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 8)
+            if item.changesSystem {
+                Text("değiştirir").font(.caption2.weight(.semibold)).foregroundStyle(Color.amberInk)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.amberInk.opacity(0.12), in: Capsule())
+                    .help("Sunucuda bir şeyi değiştirir (yeniden başlatma, kurma, silme…)")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10).padding(.vertical, 7)
@@ -116,14 +187,10 @@ struct CommandPalette: View {
 
     @ViewBuilder private var saveRow: some View {
         let q = query.trimmingCharacters(in: .whitespaces)
-        if q.isEmpty {
-            Text("Kayıtlı komut yok.").font(.callout).foregroundStyle(.secondary).padding(10)
-        } else {
+        if !q.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Eşleşen komut yok. ⏎ ile “\(q)” terminale yazılır.").font(.callout).foregroundStyle(.secondary)
-                Button {
-                    try? model.saveAction(QuickAction(name: q, command: q))
-                } label: {
+                Button { try? model.saveAction(QuickAction(name: q, command: q)) } label: {
                     Label("“\(q)” komutunu kaydet", systemImage: "plus.circle")
                 }
                 .buttonStyle(.borderless)
@@ -131,6 +198,51 @@ struct CommandPalette: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
         }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 14) {
+            hint("↑↓", "seç")
+            hint("⏎", "yaz")
+            hint("⌘⏎", "yaz ve çalıştır")
+            hint("esc", "kapat")
+            Spacer()
+            Button("Komutlarımı düzenle…") { terminals.showingPalette = false; router.showingActions = true }
+                .buttonStyle(.borderless).font(.caption)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+    }
+
+    // MARK: Filling in blanks
+
+    private func form(_ c: CommandTemplate) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button { filling = nil; focused = true } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
+                Text(c.title).font(.engraved(16))
+                Spacer()
+            }
+            ForEach(Array(c.parameters.enumerated()), id: \.element.name) { i, p in
+                LabeledContent(p.name.prefix(1).uppercased() + p.name.dropFirst()) {
+                    TextField(p.defaultValue ?? p.name, text: Binding(get: { values[p.name] ?? "" }, set: { values[p.name] = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.terminal)
+                        .focused($field, equals: i)
+                        .onSubmit { finish(c, run: NSEvent.modifierFlags.contains(.command)) }
+                }
+            }
+            Text(c.filled(values)).font(.terminalSmall).foregroundStyle(Color.accentInk)
+                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            HStack(spacing: 14) {
+                hint("⏎", "yaz")
+                hint("⌘⏎", "yaz ve çalıştır")
+                hint("esc", "geri")
+                Spacer()
+            }
+        }
+        .padding(16)
     }
 
     private func hint(_ key: String, _ text: String) -> some View {
@@ -142,15 +254,62 @@ struct CommandPalette: View {
         }
     }
 
-    private func choose(run: Bool) {
-        let command: String
-        if matches.indices.contains(selected) {
-            command = matches[selected].command
-        } else {
-            command = query.trimmingCharacters(in: .whitespaces)
+    // MARK: Actions
+
+    private func choose(_ items: [PaletteItem], run: Bool) {
+        guard items.indices.contains(selected) else {
+            let q = query.trimmingCharacters(in: .whitespaces)
+            if !q.isEmpty { send(q, run: run, changes: false) }
+            return
         }
-        guard !command.isEmpty else { return }
+        let item = items[selected]
+        switch item.source {
+        case .saved(let a):
+            send(a.command, run: run, changes: false)
+        case .library(let c):
+            if c.parameters.isEmpty {
+                send(c.template, run: run, changes: c.changesSystem)
+            } else {
+                values = [:]
+                filling = c
+                DispatchQueue.main.async { field = 0 }
+            }
+        }
+    }
+
+    private func finish(_ c: CommandTemplate, run: Bool) {
+        send(c.filled(values), run: run, changes: c.changesSystem)
+    }
+
+    /// On production servers a command that changes something is only typed, never run from here.
+    private func send(_ command: String, run: Bool, changes: Bool) {
+        let mayRun = run && !(changes && server?.isProduction == true)
         terminals.showingPalette = false
-        terminals.type(command, run: run)
+        filling = nil
+        terminals.type(command, run: mayRun)
+    }
+}
+
+/// Under the prompt: the command Tab would complete, and what it does.
+struct SuggestionHint: View {
+    let suggestion: TerminalSuggestion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("⇥").font(.caption.monospaced().weight(.bold))
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+            (Text(suggestion.input).foregroundColor(Color(nsColor: TerminalTheme.foreground).opacity(0.55))
+             + Text(String(suggestion.candidate.display.dropFirst(suggestion.input.count))).foregroundColor(Color(nsColor: TerminalTheme.foreground)))
+                .font(.system(size: 12, design: .monospaced))
+                .lineLimit(1).truncationMode(.tail)
+            Text(suggestion.candidate.title).font(.caption).foregroundStyle(Color(nsColor: TerminalTheme.foreground).opacity(0.55))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color(nsColor: TerminalTheme.chrome).opacity(0.95), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .allowsHitTesting(false)
     }
 }

@@ -59,3 +59,24 @@ final class CommandLibraryTests: XCTestCase {
         XCTAssertTrue(HealthScript.source.contains("for t in docker nginx"))
     }
 }
+
+final class CommandCompletionTests: XCTestCase {
+    func testReadsTheInputAfterThePrompt() {
+        XCTAssertEqual(CommandCompletion.typedInput(beforeCursor: "root@sahin:~# docker p", afterCursor: "   "), "docker p")
+        XCTAssertEqual(CommandCompletion.typedInput(beforeCursor: "deploy@web:/srv$ sys", afterCursor: ""), "sys")
+        XCTAssertNil(CommandCompletion.typedInput(beforeCursor: "root@sahin:~# ", afterCursor: ""), "nothing typed")
+        XCTAssertNil(CommandCompletion.typedInput(beforeCursor: "root@sahin:~# doc", afterCursor: "ker ps"), "cursor mid-line")
+        XCTAssertNil(CommandCompletion.typedInput(beforeCursor: "Loading... 45%", afterCursor: ""), "not a prompt")
+    }
+
+    func testCompletesToTheShortestFittingCommandUpToItsFirstBlank() {
+        let c = CommandCompletion.candidates(saved: [QuickAction(name: "Deploy", command: "docker compose up -d --build")],
+                                             profile: ServerProfile(family: .debian, tools: ["docker", "apt"]))
+        XCTAssertEqual(CommandCompletion.best(for: "docker p", in: c)?.text, "docker ps")
+        XCTAssertEqual(CommandCompletion.best(for: "docker compose up", in: c)?.text, "docker compose up -d")
+        XCTAssertEqual(CommandCompletion.best(for: "journalctl -u", in: c)?.text, "journalctl -u ", "stops at ‹servis›")
+        XCTAssertNil(CommandCompletion.best(for: "d", in: c), "one letter is too little")
+        XCTAssertNil(CommandCompletion.best(for: "docker ps", in: c.filter { $0.text == "docker ps" }), "already complete")
+        XCTAssertNil(CommandCompletion.best(for: "nginx -t", in: c), "nginx is not on this server")
+    }
+}
