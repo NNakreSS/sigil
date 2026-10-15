@@ -117,7 +117,7 @@ struct SetupView: View {
 
             HStack {
                 if store == .onePassword && !status.isReady {
-                    Text("1Password hazır olmadan da başlayabilirsin; o zaman yeni sunucular Keychain’i kullanır.")
+                    Text("1Password hazır olmadan da başlayabilirsin; o zaman yeni sunucular \(KeyStoreKind.usable(.onePassword, onePasswordReady: false).title) kullanır.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
