@@ -199,7 +199,9 @@ private struct KeySettings: View {
             }
         }
         .formStyle(.grouped)
-        .task { await model.refreshOnePasswordStatus() }
+        .task {
+            if model.usesOnePassword(defaultStore: KeyStoreKind(rawValue: defaultKeyStore)) { await model.refreshOnePasswordStatus() }
+        }
     }
 }
 

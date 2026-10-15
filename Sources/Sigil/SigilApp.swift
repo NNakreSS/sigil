@@ -196,7 +196,8 @@ struct SigilApp: App {
         // In sandbox runs, point in-app and external ssh at the sandboxed config.
         if ProcessInfo.processInfo.environment["SIGIL_SANDBOX"] != nil { router.terminals.configFile = model.paths.mainConfig.path }
         model.load()
-        await model.refreshOnePasswordStatus()
+        let defaultStore = KeyStoreKind(rawValue: UserDefaults.standard.string(forKey: "defaultKeyStore") ?? "")
+        if model.usesOnePassword(defaultStore: defaultStore) { await model.refreshOnePasswordStatus() }
         if !onboardingDone || UserDefaults.standard.bool(forKey: Installer.justInstalledKey) { router.showingSetup = true }
         model.startScheduler()
     }

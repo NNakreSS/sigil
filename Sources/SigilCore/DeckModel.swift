@@ -73,6 +73,12 @@ public final class DeckModel {
         onePasswordStatus = s
     }
 
+    /// Looking at 1Password's agent socket reaches into another app's container, which macOS guards with an "access
+    /// data from other apps" prompt; only do it for people who use 1Password.
+    public func usesOnePassword(defaultStore: KeyStoreKind?) -> Bool {
+        defaultStore == .onePassword || servers.contains { $0.store == .onePassword }
+    }
+
     /// Secure Enclave where supported, else 1Password when it is fully set up, otherwise the Keychain.
     public var recommendedKeyStore: KeyStoreKind {
         KeyStoreKind.usable(.preferredDefault, onePasswordReady: onePasswordStatus.isReady)
