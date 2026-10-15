@@ -38,6 +38,27 @@ final class AssistantTests: XCTestCase {
         XCTAssertThrowsError(try ClaudeAssistant.parse(Data(#"{"content":[{"text":"no json"}]}"#.utf8)))
     }
 
+    func testGeminiSendsTheKeyInAHeaderNeverTheURL() throws {
+        let req = try GeminiAssistant(apiKey: "AIza-secret", model: "gemini-2.5-flash").request("sys", "user")
+        XCTAssertEqual(req.url?.absoluteString, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+        XCTAssertFalse(req.url!.absoluteString.contains("secret"))
+        XCTAssertEqual(req.value(forHTTPHeaderField: "x-goog-api-key"), "AIza-secret")
+        let body = try JSONSerialization.jsonObject(with: req.httpBody!) as! [String: Any]
+        XCTAssertEqual((body["generationConfig"] as? [String: Any])?["responseMimeType"] as? String, "application/json")
+        XCTAssertThrowsError(try GeminiAssistant(apiKey: "k", model: "../../evil?x=").request("a", "b"))
+    }
+
+    func testParsesGeminiAnswerAndModelList() throws {
+        let answer = #"{"candidates":[{"content":{"parts":[{"text":"{\"command\": \"df -h\", \"explanation\": \"Disk kullanımı.\", \"changes_system\": false}"}]}}]}"#
+        let a = try GeminiAssistant.parse(Data(answer.utf8))
+        XCTAssertEqual(a.command, "df -h")
+        XCTAssertFalse(a.changesSystem)
+        XCTAssertThrowsError(try GeminiAssistant.parse(Data(#"{"candidates":[]}"#.utf8)))
+
+        let list = #"{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent","countTokens"]},{"name":"models/text-embedding-004","supportedGenerationMethods":["embedContent"]},{"name":"models/gemini-embedding-001","supportedGenerationMethods":["embedContent","generateContent"]}]}"#
+        XCTAssertEqual(GeminiAssistant.parseModels(Data(list.utf8)), ["gemini-2.5-pro", "gemini-2.5-flash"])
+    }
+
     /// Runs Apple's on-device model for real (no network): `SIGIL_FM=1 swift test --filter AssistantTests`.
     func testOnDeviceModelSuggestsSomethingCheckable() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["SIGIL_FM"] == "1", "opt-in")

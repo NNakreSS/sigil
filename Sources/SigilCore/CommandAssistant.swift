@@ -35,13 +35,14 @@ public struct AssistantAnswer: Sendable, Equatable {
 }
 
 public enum AssistantProvider: String, CaseIterable, Identifiable, Sendable {
-    case off, onDevice, claude
+    case off, onDevice, claude, gemini
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .off: return "Kapalı"
         case .onDevice: return "Cihaz içi (Apple)"
         case .claude: return "Claude (kendi API anahtarın)"
+        case .gemini: return "Gemini (kendi API anahtarın)"
         }
     }
 
@@ -91,6 +92,16 @@ public enum AssistantPrompt {
             return words.filter { hay.contains($0) }.count
         }
         return candidates.map { ($0, score($0)) }.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
+    }
+
+    /// The `{"command", "explanation", "changes_system"}` object in a model's text answer.
+    static func answer(fromJSONIn text: String) -> AssistantAnswer? {
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"),
+              let json = (try? JSONSerialization.jsonObject(with: Data(text[start...end].utf8))) as? [String: Any]
+        else { return nil }
+        return AssistantAnswer(command: (json["command"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+                               explanation: json["explanation"] as? String ?? "",
+                               changesSystem: json["changes_system"] as? Bool ?? true)
     }
 
     static func suggestPrompt(_ request: String, context: AssistantContext) -> String {
@@ -254,11 +265,100 @@ public struct ClaudeAssistant: CommandAssistant {
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let content = obj["content"] as? [[String: Any]],
               let text = content.compactMap({ $0["text"] as? String }).first,
-              let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"),
-              let json = try JSONSerialization.jsonObject(with: Data(text[start...end].utf8)) as? [String: Any]
+              let answer = AssistantPrompt.answer(fromJSONIn: text)
         else { throw DeckError.invalid("Claude’un yanıtı anlaşılamadı.") }
-        return AssistantAnswer(command: (json["command"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-                               explanation: json["explanation"] as? String ?? "",
-                               changesSystem: json["changes_system"] as? Bool ?? true)
+        return answer
+    }
+}
+
+// MARK: - Gemini (the user's own API key)
+
+/// Google's Gemini API with the user's key, sent in the x-goog-api-key header (never in the URL). Only used when the
+/// user picks it in Settings. On Google's free tier, prompts may be used to improve Google's products.
+public struct GeminiAssistant: CommandAssistant {
+    public let apiKey: String
+    public let model: String
+    var session: URLSession = .shared
+
+    public static let defaultModel = "gemini-2.5-flash"
+    static let base = "https://generativelanguage.googleapis.com/v1beta"
+
+    public init(apiKey: String, model: String = GeminiAssistant.defaultModel) {
+        self.apiKey = apiKey
+        self.model = model
+    }
+
+    public func suggest(_ request: String, context: AssistantContext) async throws -> AssistantAnswer {
+        try await run(AssistantPrompt.suggestInstructions, AssistantPrompt.suggestPrompt(request, context: context), context)
+    }
+
+    public func explain(_ text: String, context: AssistantContext) async throws -> AssistantAnswer {
+        try await run(AssistantPrompt.explainInstructions, AssistantPrompt.explainPrompt(text, context: context), context)
+    }
+
+    func request(_ instructions: String, _ prompt: String) throws -> URLRequest {
+        guard Validation.matches(model, #"^[A-Za-z0-9._-]{1,80}$"#) else { throw DeckError.invalid("Geçersiz Gemini model adı.") }
+        var req = URLRequest(url: URL(string: "\(Self.base)/models/\(model):generateContent")!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 60
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        let body: [String: Any] = [
+            "systemInstruction": ["parts": [["text": instructions + ClaudeAssistant.jsonRule]]],
+            "contents": [["role": "user", "parts": [["text": prompt]]]],
+            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.2, "maxOutputTokens": 1024],
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return req
+    }
+
+    private func run(_ instructions: String, _ prompt: String, _ context: AssistantContext) async throws -> AssistantAnswer {
+        let (data, response) = try await session.data(for: request(instructions, prompt))
+        try Self.check(data, response)
+        var a = try Self.parse(data)
+        a.warnings = await CommandCheck.warnings(for: a.command, profile: context.profile)
+        return a
+    }
+
+    static func check(_ data: Data, _ response: URLResponse) throws {
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            let message = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
+                .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
+            throw DeckError.invalid(status == 400 || status == 403
+                ? "Gemini isteği reddetti: \(message ?? "API anahtarını kontrol et.")"
+                : "Gemini yanıt vermedi (\(status)) \(message ?? "")")
+        }
+    }
+
+    static func parse(_ data: Data) throws -> AssistantAnswer {
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = obj["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              let answer = AssistantPrompt.answer(fromJSONIn: parts.compactMap { $0["text"] as? String }.joined())
+        else { throw DeckError.invalid("Gemini’nin yanıtı anlaşılamadı.") }
+        return answer
+    }
+
+    /// Models this key may call that can generate text, newest names first.
+    public func availableModels() async throws -> [String] {
+        var req = URLRequest(url: URL(string: "\(Self.base)/models?pageSize=200")!)
+        req.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        let (data, response) = try await session.data(for: req)
+        try Self.check(data, response)
+        return Self.parseModels(data)
+    }
+
+    static func parseModels(_ data: Data) -> [String] {
+        guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let models = obj["models"] as? [[String: Any]] else { return [] }
+        return models.compactMap { m -> String? in
+            guard let name = m["name"] as? String, name.hasPrefix("models/gemini"),
+                  (m["supportedGenerationMethods"] as? [String] ?? []).contains("generateContent") else { return nil }
+            let id = String(name.dropFirst("models/".count))
+            return id.contains("embedding") || id.contains("tts") || id.contains("image") ? nil : id
+        }
+        .sorted { $0.localizedStandardCompare($1) == .orderedDescending }
     }
 }

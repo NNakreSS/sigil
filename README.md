@@ -117,7 +117,7 @@ Hayır. Sigil'in hesap sistemi, sunucusu ya da analitiği yok. Uygulama internet
 1. **SSH ile kendi sunucularına.**
 2. **GitHub'a, güncelleme kontrolü için.** Sparkle `appcast.xml` dosyasını indirir. Güncellemeler EdDSA ile imzalıdır, imzası tutmayan bir dosya kurulmaz.
 
-Kodda bunların dışında tek bir ağ isteği var ve o da **yalnızca sen açarsan** çalışır: Ayarlar → Terminal → Kod yardımında "Claude (kendi API anahtarın)" seçilirse, öneri istediğin anda isteğin (ya da seçtiğin terminal metni) ve sunucunun işletim sistemi ile kurulu araçların listesi Anthropic'e gönderilir. Sunucu adresi, kullanıcı adı ve anahtarlar gönderilmez. Varsayılan kod yardımı Apple'ın cihaz içi modelidir ve Mac'ten hiçbir şey çıkmaz. 1Password seçeneğinde, ürettiğin anahtar 1Password'ün kendi şifreli senkronizasyonuyla kasana kaydedilir. Bu, 1Password'ün normal işleyişidir.
+Kodda bunların dışında yalnızca **sen açarsan** çalışan ağ istekleri var: Ayarlar → Terminal → Kod yardımında "Claude" ya da "Gemini" (kendi API anahtarınla) seçilirse, öneri istediğin anda isteğin (ya da seçtiğin terminal metni) ve sunucunun işletim sistemi ile kurulu araçların listesi Anthropic'e ya da Google'a gönderilir. Sunucu adresi, kullanıcı adı ve anahtarlar gönderilmez. Ücretsiz Gemini API katmanında Google gönderilenleri ürünlerini geliştirmek için kullanabilir. Varsayılan kod yardımı Apple'ın cihaz içi modelidir ve Mac'ten hiçbir şey çıkmaz. 1Password seçeneğinde, ürettiğin anahtar 1Password'ün kendi şifreli senkronizasyonuyla kasana kaydedilir. Bu, 1Password'ün normal işleyişidir.
 </details>
 
 <details>
@@ -162,7 +162,7 @@ Kodda bunların dışında tek bir ağ isteği var ve o da **yalnızca sen açar
 | **Gömülü terminal** | Sekmeli terminal, ⌘1…9 ile geçiş, yan yana bölme (⌘D), geçmişte arama (⌘F), yazı boyutu, 8 renk teması, yazı tipi ve imleç ayarları. İstersen Terminal, iTerm2, Ghostty veya Warp. |
 | **Komut paleti (⌘P)** | Türkçe açıklamalı 134 hazır komut; sunucuda neler kurulu olduğuna göre süzülür (Docker yoksa Docker komutları çıkmaz). Boşluklu komutlar önce değerleri sorar, sistemi değiştirenler işaretlidir. |
 | **Tab ile tamamlama** | Yazarken en uygun komut altta belirir, Tab tamamlar. Öneri yoksa Tab sunucunun kendi tamamlamasına gider. |
-| **Kod yardımı** | “son bir saatteki nginx hatalarını göster” gibi bir isteği komuta çevirir; seçili hata metnini açıklar (⇧⌘E). Varsayılan Apple’ın cihaz içi modeli (Mac’ten bir şey çıkmaz); istersen kendi Claude API anahtarınla. Öneriler asla kendiliğinden çalışmaz ve Sigil şüpheli komutları işaretler. |
+| **Kod yardımı** | “son bir saatteki nginx hatalarını göster” gibi bir isteği komuta çevirir; seçili hata metnini açıklar (⇧⌘E). Varsayılan Apple’ın cihaz içi modeli (Mac’ten bir şey çıkmaz); istersen kendi Claude ya da Gemini API anahtarınla. Öneriler asla kendiliğinden çalışmaz ve Sigil şüpheli komutları işaretler. |
 | **Bakım** | Sunucuyu güncelle (önce paket listesi, sonra terminalde canlı `apt upgrade`) ve yeniden başlat (geri gelene kadar bekler, kaç saniye kapalı kaldığını söyler). |
 | **Erişim ver** | Bir arkadaşının açık anahtarıyla, şifre paylaşmadan giriş izni: kendi hesabı ya da seninki, süreli (sunucu kendisi uygular), IP sınırlı; tek tıkla geri alınır. |
 | **Dosyalar** | Sunucudaki dosyalarda gezin, önizle, sürükle-bırak yükle, indir, yeniden adlandır, sil. Tek bağlantı, tek Touch ID. |

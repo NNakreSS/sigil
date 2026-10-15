@@ -223,7 +223,7 @@ struct CommandPalette: View {
             Image(systemName: "sparkles").foregroundStyle(Color.accentInk)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Öner: “\(q)”").font(.callout.weight(.medium))
-                Text(AssistantSettings.shared.provider == .claude ? "Claude bir komut önerir" : "Cihaz içi model bir komut önerir; Mac’ten bir şey çıkmaz")
+                Text(AssistantSettings.shared.askSubtitle)
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
