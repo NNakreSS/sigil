@@ -120,6 +120,8 @@ struct SigilApp: App {
                 .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(router.terminals.activeID == nil)
                 Divider()
+                terminalTools
+                Divider()
                 ForEach(0..<9, id: \.self) { i in
                     Button("Sekme \(i + 1)") { router.terminals.select(index: i); router.mode = .terminal }
                         .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
@@ -146,6 +148,33 @@ struct SigilApp: App {
                 .environment(router)
                 .environment(\.locale, trLocale)
         }
+    }
+
+    /// Palette, find, zoom, split and clear: they act on the active terminal tab.
+    @ViewBuilder private var terminalTools: some View {
+        let t = router.terminals
+        let hasTerminal = router.mode == .terminal && t.active != nil
+        Button("Komut Paleti…") { t.showingFind = false; t.showingPalette = true }
+            .keyboardShortcut("p").disabled(!hasTerminal)
+        Button("Bul…") { t.showingPalette = false; t.showingFind = true }
+            .keyboardShortcut("f").disabled(!hasTerminal)
+        Button("Sonrakini Bul") { t.find() }
+            .keyboardShortcut("g").disabled(!hasTerminal || t.findTerm.isEmpty)
+        Button("Öncekini Bul") { t.find(backwards: true) }
+            .keyboardShortcut("g", modifiers: [.command, .shift]).disabled(!hasTerminal || t.findTerm.isEmpty)
+        Button("Ekranı Temizle") { t.clearScreen() }
+            .keyboardShortcut("k", modifiers: [.command, .option]).disabled(!hasTerminal)
+        Divider()
+        Button("Yazıyı Büyüt") { t.zoom(1) }.keyboardShortcut("+")
+        Button("Yazıyı Küçült") { t.zoom(-1) }.keyboardShortcut("-")
+        Button("Yazı Boyutunu Sıfırla") { t.resetZoom() }.keyboardShortcut("0", modifiers: [.command, .option])
+        Divider()
+        Button("Yan Yana Böl") {
+            if let s = t.active, let server = model.server(s.serverID) { t.splitActive(with: server) }
+        }
+        .keyboardShortcut("d").disabled(!hasTerminal)
+        Button("Bölmeyi Kapat") { t.unsplit() }
+            .keyboardShortcut("d", modifiers: [.command, .shift]).disabled(t.split == nil)
     }
 
     private var needsAttention: Bool {
