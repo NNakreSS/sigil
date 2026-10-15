@@ -199,7 +199,7 @@ extension DeckModel {
         let line = try GrantScript.keyLine(request)
 
         return try await withBusy(id, "Erişim veriliyor") {
-            let target = target(for: s), a = auth(s.store, s.keyFileName)
+            let target = sharedTarget(for: s), a = auth(s.store, s.keyFileName)
             var created = false
             if own {
                 try await remote.installKey(target: target, auth: a, publicKeyLine: line)
@@ -225,7 +225,7 @@ extension DeckModel {
     public func revokeAccess(_ id: UUID, grantID: UUID, removeAccount: Bool = false) async throws {
         guard let s = server(id), let g = s.grants?.first(where: { $0.id == grantID }) else { throw DeckError.notFound }
         try await withBusy(id, "Erişim kaldırılıyor") {
-            let target = target(for: s), a = auth(s.store, s.keyFileName)
+            let target = sharedTarget(for: s), a = auth(s.store, s.keyFileName)
             if g.account == s.user && !removeAccount {
                 try await remote.removeKey(target: target, auth: a, blob: g.publicKeyBlob)
             } else {

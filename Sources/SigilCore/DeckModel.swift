@@ -359,7 +359,9 @@ public final class DeckModel {
         busy[id] = "Anahtar yenileniyor"
         defer { busy[id] = nil }
 
+        // Installing and removing go over the approved connection; proving the new key works is a fresh login with it.
         let target = self.target(for: old)
+        let shared = sharedTarget(for: old)
         let newFile = Self.keyFileName(for: id)
         let origin = automatic ? "Otomatik" : "Manuel"
         var material: KeyMaterial?
@@ -368,7 +370,7 @@ public final class DeckModel {
             let m = try await generateKey(old.store, fileName: newFile, alias: old.alias)
             material = m
 
-            try await remote.installKey(target: target, auth: auth(old.store, old.keyFileName), publicKeyLine: m.publicKeyLine)
+            try await remote.installKey(target: shared, auth: auth(old.store, old.keyFileName), publicKeyLine: m.publicKeyLine)
             do {
                 try await remote.ping(target: target, auth: auth(old.store, newFile))
             } catch {
@@ -400,7 +402,7 @@ public final class DeckModel {
             // Cut off the old key. If that fails, remember it and retry later rather than leave it forever.
             var warning: String?
             do {
-                try await remote.removeKey(target: target, auth: auth(old.store, newFile), blob: old.publicKeyBlob)
+                try await remote.removeKey(target: shared, auth: auth(old.store, newFile), blob: old.publicKeyBlob)
             } catch {
                 warning = error.localizedDescription
                 update(id) { $0.pendingKeyRemovals.append(old.publicKeyBlob) }
@@ -417,7 +419,7 @@ public final class DeckModel {
         } catch {
             // The old key is still the active one. Clean up whatever we created for the new key.
             if let m = material {
-                try? await remote.removeKey(target: target, auth: auth(old.store, old.keyFileName), blob: m.blob)
+                try? await remote.removeKey(target: shared, auth: auth(old.store, old.keyFileName), blob: m.blob)
                 await deleteKey(old.store, fileName: newFile, material: m)
             }
             update(id) { $0.lastRotationFailureAt = Date() }
@@ -683,11 +685,14 @@ public final class DeckModel {
         guard busy[id] == nil else { throw DeckError.busy }
         busy[id] = "Sertleştiriliyor"
         defer { busy[id] = nil }
+        // Reads, applying and installing share the approved connection (one Touch ID); the confirmation below must
+        // be a brand-new login, or a lock-out would go unnoticed.
+        let shared = sharedTarget(for: s)
         let target = self.target(for: s)
         let a = auth(s.store, s.keyFileName)
 
         progress("Sunucunun durumu okunuyor")
-        let state = try await remote.hardeningState(target: target, auth: a)
+        let state = try await remote.hardeningState(target: shared, auth: a)
         guard state.canAdminister else {
             throw DeckError.invalid("Bu kullanıcı root değil ve şifresiz sudo yetkisi yok; değişiklik yapılamaz.")
         }
@@ -701,7 +706,7 @@ public final class DeckModel {
         if plan.touchesAccess {
             let token = (0..<2).map { _ in UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "") }.joined().prefix(32)
             progress("Ayarlar uygulanıyor (45 sn içinde doğrulanmazsa kendiliğinden geri alınır)")
-            let out = try await remote.runScript(target: target, auth: a, HardeningScript.apply(plan, state: state, token: String(token)))
+            let out = try await remote.runScript(target: shared, auth: a, HardeningScript.apply(plan, state: state, token: String(token)))
             if out.contains("RESULT sshd_invalid") { throw DeckError.invalid("Yeni sshd ayarı doğrulamadan geçemedi; hiçbir şey değişmedi.") }
             guard out.contains("RESULT applied") else { throw DeckError.ssh("Sunucu beklenen yanıtı vermedi: \(out.trimmed)") }
 
@@ -727,13 +732,13 @@ public final class DeckModel {
 
         if plan.installFail2ban || plan.enableUnattendedUpgrades {
             progress("Paketler kuruluyor")
-            let out = try await remote.runScript(target: target, auth: a, HardeningScript.extras(plan))
+            let out = try await remote.runScript(target: shared, auth: a, HardeningScript.extras(plan))
             log(id, out.contains("extras_ok") ? .info : .warning,
                 out.contains("extras_ok") ? "fail2ban / otomatik güncellemeler hazır." : "Paket kurulumu tam tamamlanmadı.")
         }
 
         progress("Son durum okunuyor")
-        return .applied(try await remote.hardeningState(target: target, auth: a))
+        return .applied(try await remote.hardeningState(target: shared, auth: a))
     }
 
     // MARK: Quick actions

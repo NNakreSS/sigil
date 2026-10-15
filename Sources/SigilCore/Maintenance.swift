@@ -80,7 +80,7 @@ extension DeckModel {
     public func upgradablePackages(_ id: UUID) async throws -> [UpgradablePackage] {
         guard let s = server(id) else { throw DeckError.notFound }
         return try await withBusy(id, "Güncellemeler denetleniyor") {
-            try await remote.upgradablePackages(target: target(for: s), auth: auth(s.store, s.keyFileName))
+            try await remote.upgradablePackages(target: sharedTarget(for: s), auth: auth(s.store, s.keyFileName))
         }
     }
 
@@ -92,7 +92,7 @@ extension DeckModel {
         guard let s = server(id) else { throw DeckError.notFound }
         return try await withBusy(id, "Yeniden başlatılıyor") {
             progress(.requesting)
-            try await remote.scheduleReboot(target: target(for: s), auth: auth(s.store, s.keyFileName))
+            try await remote.scheduleReboot(target: sharedTarget(for: s), auth: auth(s.store, s.keyFileName))
             log(id, .warning, "Yeniden başlatma istendi.")
 
             progress(.goingDown)
