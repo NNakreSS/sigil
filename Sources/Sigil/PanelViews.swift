@@ -132,7 +132,7 @@ private struct FileBrowser: View {
             Button { Task { await load("~") } } label: { Image(systemName: "house") }.help("Ev klasörü")
             TextField("Yol", text: $pathField)
                 .textFieldStyle(.roundedBorder).font(.terminalSmall)
-                .onSubmit { Task { await load(pathField) } }
+                .onSubmit { if ReturnKey.pressed { Task { await load(pathField) } } }
             Button { Task { await load(path, remember: false) } } label: { Image(systemName: "arrow.clockwise") }.help("Yenile")
             Toggle(isOn: $showHidden) { Image(systemName: "eye") }.toggleStyle(.button).help("Gizli dosyaları göster")
             Button { newName = ""; creatingFolder = true } label: { Image(systemName: "folder.badge.plus") }.help("Yeni klasör")

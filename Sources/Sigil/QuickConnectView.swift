@@ -32,7 +32,7 @@ struct QuickConnectView: View {
                         .textFieldStyle(.plain)
                         .font(.title3)
                         .focused($focused)
-                        .onSubmit { connect(openDetail: false) }
+                        .onSubmit { if ReturnKey.pressed { connect(openDetail: false) } }
                     Text("esc").font(.caption.monospaced()).foregroundStyle(.tertiary)
                 }
                 .padding(16)

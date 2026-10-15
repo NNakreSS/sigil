@@ -1,6 +1,15 @@
 import SigilCore
 import SwiftUI
 
+/// macOS also ends text editing (and fires onSubmit) when a field loses focus, e.g. on a click elsewhere in the
+/// palette; only a real Return should act.
+enum ReturnKey {
+    static var pressed: Bool {
+        guard let e = NSApp.currentEvent, e.type == .keyDown else { return false }
+        return e.keyCode == 36 || e.keyCode == 76   // Return, keypad Enter
+    }
+}
+
 /// ⌘F: find in the active terminal's scrollback. Return = next, ⇧Return = previous, Esc closes.
 struct TerminalFindBar: View {
     @Environment(TerminalSessions.self) private var terminals
@@ -14,7 +23,7 @@ struct TerminalFindBar: View {
                 .textFieldStyle(.plain)
                 .frame(width: 180)
                 .focused($focused)
-                .onSubmit { terminals.find(backwards: NSEvent.modifierFlags.contains(.shift)) }
+                .onSubmit { if ReturnKey.pressed { terminals.find(backwards: NSEvent.modifierFlags.contains(.shift)) } }
                 .onChange(of: terminals.findTerm) { _, _ in terminals.find() }
             Text(terminals.findTerm.isEmpty ? "" : "\(terminals.findSummary.index)/\(terminals.findSummary.total)")
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -143,7 +152,7 @@ struct CommandPalette: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($focused)
-                    .onSubmit { choose(items, run: NSEvent.modifierFlags.contains(.command)) }
+                    .onSubmit { if ReturnKey.pressed { choose(items, run: NSEvent.modifierFlags.contains(.command)) } }
                     .onChange(of: query) { _, _ in selected = 0 }
             }
             .padding(14)
@@ -267,7 +276,7 @@ struct CommandPalette: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.terminal)
                         .focused($field, equals: i)
-                        .onSubmit { finish(c, run: NSEvent.modifierFlags.contains(.command)) }
+                        .onSubmit { if ReturnKey.pressed { finish(c, run: NSEvent.modifierFlags.contains(.command)) } }
                 }
             }
             Text(c.filled(values)).font(.terminalSmall).foregroundStyle(Color.accentInk)
@@ -323,6 +332,7 @@ struct CommandPalette: View {
 
     /// On production servers a command that changes something is only typed, never run from here.
     private func send(_ command: String, run: Bool, changes: Bool) {
+        guard terminals.showingPalette else { return }   // already chosen: never type twice
         let mayRun = run && !(changes && server?.isProduction == true)
         terminals.showingPalette = false
         filling = nil
@@ -382,7 +392,7 @@ struct AssistantAnswerView: View {
                     .padding(10)
                     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                     .focused($focused)
-                    .onSubmit { if !command.isEmpty { type(command) } }
+                    .onSubmit { if ReturnKey.pressed && !command.isEmpty { type(command) } }
                 Text(answer.explanation).font(.callout).fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 6) {
                     if answer.changesSystem {
