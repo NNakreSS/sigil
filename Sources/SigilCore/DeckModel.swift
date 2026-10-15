@@ -537,7 +537,8 @@ public final class DeckModel {
 
         let target = self.target(for: s)
         let lines = try await remote.listAuthorizedKeys(target: target, auth: auth(s.store, s.keyFileName))
-        let ours = Set([s.publicKeyBlob] + s.pendingKeyRemovals)
+        // Keys the user granted through Sigil are known, not foreign.
+        let ours = Set([s.publicKeyBlob] + s.pendingKeyRemovals + (s.grants ?? []).map(\.publicKeyBlob))
         let previous = Dictionary(uniqueKeysWithValues: (s.foreignKeys ?? []).map { ($0.blob, $0) })
         let local = Self.localPublicKeys(sshDir: paths.sshDir)
 

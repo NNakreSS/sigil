@@ -138,6 +138,8 @@ public struct Server: Codable, Identifiable, Hashable, Sendable {
     public var unacknowledgedForeignKeys: [ForeignKey] { (foreignKeys ?? []).filter { !$0.acknowledged } }
 
     public var tunnels: [TunnelProfile]?
+    /// Other people's keys the user let in (Erişim ver).
+    public var grants: [AccessGrant]?
     /// Reached through this other managed server (ProxyJump). One level only.
     public var jumpServerID: UUID?
     public var health: ServerHealth?

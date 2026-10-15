@@ -23,6 +23,7 @@ struct ServerDetailView: View {
     @State private var showingEdit = false
     @State private var showingHostKey = false
     @State private var showingHardening = false
+    @State private var showingGrant = false
     @State private var scrollTarget: String?
     @State private var actionError: String?
     @State private var toast: String?
@@ -42,6 +43,7 @@ struct ServerDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)   // both cards as tall as the taller one
                     HealthCard(server: server)
                     TunnelsCard(server: server)
+                    GrantsCard(server: server, showingGrant: $showingGrant)
                     KeysAuditCard(server: server).id("keys")
                     historyCard(server)
                     eventsCard(server)
@@ -95,6 +97,9 @@ struct ServerDetailView: View {
             }
             .sheet(isPresented: $showingHardening) {
                 HardeningSheet(server: server)
+            }
+            .sheet(isPresented: $showingGrant) {
+                GrantAccessSheet(server: server)
             }
             .alert("İşlem yapılamadı", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
                 Button("Tamam") { actionError = nil }
@@ -168,6 +173,7 @@ struct ServerDetailView: View {
                     Menu {
                         Button("Düzenle…") { showingEdit = true }
                         Button("Sertleştir…") { showingHardening = true }
+                        Button("Erişim Ver…") { showingGrant = true }
                         Button("Bağlantıyı Test Et") { Task { await model.checkStatus(s.id, interactive: true) } }
                         Button("Anahtarı Şimdi Yenile") { rotate(s) }
                         Divider()
