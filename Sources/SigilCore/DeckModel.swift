@@ -25,6 +25,8 @@ public final class DeckModel {
     private let secureEnclave: SecureEnclaveService
     private var scheduler: Task<Void, Never>?
     private var tunnelProcesses: [UUID: TunnelProcess] = [:]
+    /// Shared connections for open panels (file browser, Docker), by server.
+    var sessions: [UUID: RemoteSession] = [:]
     /// Tunnel id → server id, for every tunnel currently up.
     public private(set) var activeTunnels: [UUID: UUID] = [:]
     public private(set) var actions: [QuickAction] = []

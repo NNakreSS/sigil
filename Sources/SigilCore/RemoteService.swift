@@ -6,11 +6,15 @@ public struct RemoteTarget: Sendable, Equatable {
     public let user: String
     /// Reach the host through a jump server (built by `RemoteService.proxyCommand`).
     public let proxyCommand: String?
-    public init(host: String, port: Int, user: String, proxyCommand: String? = nil) {
+    /// Reuse an already authenticated connection (ssh ControlMaster socket), so a burst of commands, e.g. while
+    /// browsing files, asks for Touch ID once instead of every time.
+    public var controlPath: String?
+    public init(host: String, port: Int, user: String, proxyCommand: String? = nil, controlPath: String? = nil) {
         self.host = host
         self.port = port
         self.user = user
         self.proxyCommand = proxyCommand
+        self.controlPath = controlPath
     }
 }
 
@@ -194,7 +198,7 @@ public struct RemoteService: Sendable {
             "-o", "UserKnownHostsFile=\(paths.knownHosts.path)",
             "-o", "ConnectTimeout=15",
             "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=3",
-            "-o", "ControlMaster=no", "-o", "ControlPath=none",
+            "-o", "ControlMaster=no", "-o", "ControlPath=\(target.controlPath ?? "none")",
             "-o", "LogLevel=ERROR",
             "-p", String(target.port),
         ]

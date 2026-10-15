@@ -59,6 +59,7 @@ final class LocalSSHD {
         UsePAM no
         StrictModes no
         LogLevel ERROR
+        Subsystem sftp internal-sftp
         """
         try text.write(to: cfg, atomically: true, encoding: .utf8)
 
