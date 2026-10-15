@@ -6,12 +6,31 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            AppearanceSettings().tabItem { Label("Görünüm", systemImage: "paintpalette") }
             GeneralSettings().tabItem { Label("Genel", systemImage: "gearshape") }
             TerminalSettings().tabItem { Label("Terminal", systemImage: "terminal") }
             KeySettings().tabItem { Label("Anahtarlar", systemImage: "key") }
             UpdateSettings(updater: updater).tabItem { Label("Güncellemeler", systemImage: "arrow.down.circle") }
         }
         .frame(width: 620, height: 560)
+    }
+}
+
+private struct AppearanceSettings: View {
+    var body: some View {
+        Form {
+            Section {
+                ThemePicker().padding(.vertical, 6)
+            } header: {
+                Text("Tema")
+            } footer: {
+                Text("Tüm pencerelere anında uygulanır. Terminalin kendi renkleri Terminal sekmesinden ayrıca seçilir.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(WindowBackdrop())
     }
 }
 

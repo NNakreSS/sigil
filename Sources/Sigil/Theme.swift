@@ -9,36 +9,42 @@ import SwiftUI
 // would print, the system sans for everything else.
 
 extension Color {
-    private static func adaptive(light: NSColor, dark: NSColor) -> Color {
-        Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light })
-    }
+    // Every token follows the chosen app theme (Settings → Görünüm). Reading them in a view body makes SwiftUI
+    // redraw when the theme changes.
 
-    private static func hex(_ v: UInt32) -> NSColor {
-        NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
-    }
-
-    /// Seal body.
-    static let ink = adaptive(light: hex(0x26215C), dark: hex(0x3C3489))
-    /// Lines engraved on the seal.
-    static let inkLine = adaptive(light: hex(0xEEEDFE), dark: hex(0xEEEDFE))
-    static let inkSoft = adaptive(light: hex(0xAFA9EC), dark: hex(0xAFA9EC))
+    /// Seal body, primary buttons.
+    static var ink: Color { ThemeStore.shared.color(\.brand) }
+    /// Text and lines on `ink`.
+    static var inkLine: Color { ThemeStore.shared.color(\.onBrand) }
+    static var inkSoft: Color { ThemeStore.shared.color(\.soft) }
     /// Page.
-    static let parchment = adaptive(light: hex(0xF7F4EC), dark: hex(0x1C1B19))
-    /// Raised surfaces on the page.
-    static let vellum = adaptive(light: hex(0xFFFDF8), dark: hex(0x262522))
-    static let hairline = adaptive(light: hex(0x26215C).withAlphaComponent(0.10), dark: NSColor.white.withAlphaComponent(0.09))
-    /// The one accent: healthy, verified, go.
-    static let verdigris = adaptive(light: hex(0x0F6E56), dark: hex(0x5DCAA5))
-    /// Warm alarm instead of stock red.
-    static let cinnabar = adaptive(light: hex(0xC2491F), dark: hex(0xF0997B))
-    static let amberInk = adaptive(light: hex(0x9A5B0C), dark: hex(0xEF9F27))
-    static let accentInk = adaptive(light: hex(0x534AB7), dark: hex(0xAFA9EC))
+    static var parchment: Color { ThemeStore.shared.color(\.page) }
+    /// Raised surfaces on the page (glass-like on dark themes).
+    static var vellum: Color {
+        ThemeStore.shared.color(\.surface, alpha: ThemeStore.shared.current.isDark ? 0.82 : 1)
+    }
+    static var hairline: Color {
+        ThemeStore.shared.current.isDark ? Color.white.opacity(0.09) : ThemeStore.shared.color(\.brand, alpha: 0.10)
+    }
+    /// Healthy, verified, go.
+    static var verdigris: Color { ThemeStore.shared.color(\.success) }
+    /// Alarm.
+    static var cinnabar: Color { ThemeStore.shared.color(\.danger) }
+    static var amberInk: Color { ThemeStore.shared.color(\.warning) }
+    static var accentInk: Color { ThemeStore.shared.color(\.accent) }
+
+    /// The call-to-action gradient.
+    static var brandGradient: LinearGradient {
+        let t = ThemeStore.shared.current
+        return LinearGradient(colors: [Color(nsColor: AppTheme.hex(t.gradient.0)), Color(nsColor: AppTheme.hex(t.gradient.1))],
+                              startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 }
 
 extension Font {
     /// Engraved voice: server names, headings.
     static func engraved(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .serif)
+        .system(size: size, weight: weight, design: ThemeStore.shared.current.headingDesign)
     }
     static let terminal = Font.system(.body, design: .monospaced)
     static let terminalSmall = Font.system(.caption, design: .monospaced)
@@ -142,8 +148,7 @@ struct Card<Content: View>: View {
         .padding(18)
         // Fills the height it is offered, so cards side by side (with a fixed-size row) come out equally tall.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.vellum, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .glassSurface(cornerRadius: 16)
     }
 }
 
@@ -208,17 +213,66 @@ struct PressableStyle: ButtonStyle {
     }
 }
 
-/// Primary call to action: an inked capsule.
+/// Primary call to action: the theme's gradient, with a soft glow on dark themes.
 struct InkButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let dark = ThemeStore.shared.current.isDark
+        let pressed = configuration.isPressed
+        return configuration.label
             .font(.body.weight(.semibold))
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .foregroundStyle(Color.inkLine)
-            .background(Color.ink.opacity(configuration.isPressed ? 0.85 : 1), in: Capsule())
+            .shadow(color: .black.opacity(0.25), radius: 0.5, y: 0.5)   // text sits in the seal, like an impression
+            .background {
+                ZStack {
+                    Capsule().fill(Color.brandGradient)
+                    // Light catching the top edge; gone while pressed, as if the seal were pushed in.
+                    Capsule().fill(LinearGradient(colors: [Color.white.opacity(pressed ? 0 : 0.22), .clear],
+                                                  startPoint: .top, endPoint: .center))
+                    Capsule().strokeBorder(LinearGradient(colors: [Color.white.opacity(0.28), Color.black.opacity(0.15)],
+                                                          startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                }
+            }
+            .shadow(color: Color.ink.opacity(dark && isEnabled ? (pressed ? 0.2 : 0.4) : 0.15), radius: pressed ? 4 : (dark ? 10 : 5), y: pressed ? 1 : 3)
+            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(pressed ? 0.965 : 1)
+            .animation(Motion.stamp, value: pressed)
+    }
+}
+
+/// Secondary actions: a quiet glass capsule that lights up its border on hover.
+struct GlassButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.vellum.opacity(configuration.isPressed ? 1 : 0.9), in: Capsule())
+            .overlay(Capsule().strokeBorder(hovering ? Color.accentInk.opacity(0.6) : Color.hairline, lineWidth: 1))
+            .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(Motion.quick, value: configuration.isPressed)
+            .animation(Motion.quick, value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    /// Raised surface: glass on dark themes (translucent fill, light top edge, soft shadow), paper on light ones.
+    func glassSurface(cornerRadius: CGFloat = 14) -> some View {
+        let dark = ThemeStore.shared.current.isDark
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return self
+            .background(Color.vellum, in: shape)
+            .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(dark ? 0.16 : 0.5), Color.hairline],
+                                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
+            .shadow(color: .black.opacity(dark ? 0.35 : 0.06), radius: dark ? 16 : 8, y: dark ? 8 : 3)
     }
 }
 

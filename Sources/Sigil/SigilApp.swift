@@ -158,6 +158,7 @@ struct SigilApp: App {
                 .environment(model)
                 .environment(router)
                 .environment(\.locale, trLocale)
+                .tint(Color.accentInk)
         }
     }
 
@@ -200,6 +201,15 @@ struct SigilApp: App {
         NSApplication.shared.activate(ignoringOtherApps: true)
         guard !AppLaunch.started else { return }
         AppLaunch.started = true
+        // Theme: follow macOS light/dark for "auto", force the theme's appearance otherwise.
+        let theme = ThemeStore.shared
+        theme.systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        AppLaunch.appearanceObservation = DistributedNotificationCenter.default().addObserver(
+            forName: .init("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { _ in
+            let dark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+            MainActor.assumeIsolated { ThemeStore.shared.systemIsDark = dark }
+        }
+        theme.applyAppearance()
         Installer.run()
         model.notify = { title, body in Notifier.post(title, body) }
         // Tunnels are child ssh processes; never leave them running (and holding ports) after Sigil quits.
@@ -230,6 +240,7 @@ struct SigilApp: App {
 @MainActor
 enum AppLaunch {
     static var started = false
+    static var appearanceObservation: NSObjectProtocol?
 }
 
 /// Menu bar icon drawn from the brand sigil (template image, so it follows the menu bar's colour). When something

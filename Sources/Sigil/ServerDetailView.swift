@@ -155,11 +155,13 @@ struct ServerDetailView: View {
                     Button { router.panel = .init(serverID: s.id, kind: .files) } label: {
                         Label("Dosyalar", systemImage: "folder")
                     }
+                    .buttonStyle(GlassButtonStyle())
                     .help("Sunucudaki dosyalar: gez, önizle, yükle, indir")
                     if ServerProfile(s.health)?.tools.contains("docker") ?? true {
                         Button { router.panel = .init(serverID: s.id, kind: .docker) } label: {
                             Label("Docker", systemImage: "cube.box")
                         }
+                        .buttonStyle(GlassButtonStyle())
                         .help("Container’lar, loglar, yeniden başlatma")
                     }
 

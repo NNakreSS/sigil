@@ -18,7 +18,7 @@ struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 360)
             } detail: {
                 ZStack {
-                    Color.parchment.ignoresSafeArea()
+                    WindowBackdrop()
                     if router.mode == .terminal {
                         TerminalWorkspaceView()
                             .transition(.opacity)
@@ -163,6 +163,8 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Color.vellum.opacity(0.6))
         .contextMenu(forSelectionType: UUID.self) { _ in
             EmptyView()
         } primaryAction: { ids in
@@ -339,17 +341,14 @@ struct EmptyStateView: View {
 
                 if !model.importCandidates().isEmpty {
                     Button("~/.ssh/config’ten içe aktar") { router.showingImport = true }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
+                        .buttonStyle(GlassButtonStyle())
                 }
                 if !model.servers.isEmpty {
                     Button("Hızlı bağlan  ⌘K") { router.showingQuickConnect = true }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
+                        .buttonStyle(GlassButtonStyle())
                 }
                 Button { router.tourPage = 0 } label: { Label("Nasıl çalışır?", systemImage: "play.circle") }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
+                    .buttonStyle(GlassButtonStyle())
             }
             FeatureTiles().padding(.top, 12)
         }
