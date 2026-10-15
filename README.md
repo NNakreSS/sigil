@@ -56,7 +56,9 @@ Hayır. Sigil 1Password'le yalnızca resmi `op` komut satırı aracıyla konuşu
 | `op item delete --archive` | Yenilenen eski anahtarı kaldırmak | Hiçbir şey. Kayıt silinmez, Arşiv'e taşınır |
 
 - Başka bir kaydın içeriğini isteyen tek bir satır bile yok. Diğer kayıtların adları bile listelenmez.
-- `op` her yeni oturum için 1Password'ün kendi penceresinde Touch ID onayı ister. Onay vermezsen hiçbir şey çalışmaz.
+- `op` her yeni oturum için 1Password'ün kendi penceresinde onay ister. Onay vermezsen hiçbir şey çalışmaz.
+- O pencere **hesabın tamamına erişim** ister. Bu 1Password'ün kuralıdır: `op` aracına kayıt ya da kasa bazında sınırlı izin verilemiyor. Sigil'in bu erişimle ne yaptığı yukarıdaki tabloyla sınırlı, kod açık. Onay bir süre kullanılmayınca kendiliğinden düşer.
+- Sigil `op`'u yalnızca senin başlattığın bir 1Password işleminde çağırır: sunucu ekleme, anahtar yenileme ya da kurulum ekranındaki **Kontrol Et**. Uygulama açılırken ya da arka planda 1Password penceresi çıkmaz.
 - Daha fazla ayrım istersen 1Password'ü hiç bağlamadan macOS Keychain seçeneğini kullanabilirsin.
 </details>
 
