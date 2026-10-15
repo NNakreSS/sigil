@@ -36,6 +36,7 @@ struct ServerDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header(server)
                     if let banner = attentionBanner(server) { banner.transition(.move(edge: .top).combined(with: .opacity)) }
+                    NextStepsCard(server: server, harden: { showingHardening = true }, grant: { showingGrant = true })
                     HStack(alignment: .top, spacing: 16) {
                         connectionCard(server)
                         keyCard(server)

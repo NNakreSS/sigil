@@ -20,6 +20,8 @@ final class AppRouter {
     var maintenance: MaintenanceRequest?
     /// Files or Docker panel for a server.
     var panel: PanelRequest?
+    /// The tour, open at this page.
+    var tourPage: Int?
     /// Waiting for "yes, connect to production".
     var pendingProductionConnect: Server?
     /// Production servers the user already confirmed in this app session.
@@ -33,6 +35,8 @@ final class AppRouter {
             return
         }
         if server.isProduction { productionApproved.insert(server.id) }
+        var connected = UserDefaults.standard.stringArray(forKey: "connectedServers") ?? []
+        if !connected.contains(server.id.uuidString) { connected.append(server.id.uuidString); UserDefaults.standard.set(connected, forKey: "connectedServers") }
         let app = TerminalApp.preferred
         if app == .embedded {
             terminals.open(server)
@@ -131,6 +135,11 @@ struct SigilApp: App {
                 }
             }
             CommandGroup(after: .appInfo) { CheckForUpdatesButton(updater: updater) }
+            CommandGroup(replacing: .help) {
+                Button("Sigil’i Tanı…") { router.tourPage = 0 }
+                Button("Klavye Kısayolları") { router.tourPage = 2 }
+                Button("Güvenlik nasıl çalışır?") { Links.openURL("https://github.com/NNakreSS/sigil#güvenlik-sade-bir-dille") }
+            }
         }
 
         MenuBarExtra(isInserted: $showMenuBarIcon) {

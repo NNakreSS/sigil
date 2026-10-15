@@ -66,6 +66,9 @@ struct ContentView: View {
         .sheet(isPresented: $router.showingEmergency) {
             EmergencyRotateSheet()
         }
+        .sheet(item: Binding(get: { router.tourPage.map { TourPageID(page: $0) } }, set: { router.tourPage = $0?.page })) { t in
+            TourSheet(page: t.page)
+        }
         .sheet(item: $router.panel) { request in
             if let server = model.server(request.serverID) {
                 ServerPanelSheet(server: server, kind: request.kind)
@@ -229,6 +232,7 @@ struct ContentView: View {
             Spacer()
             Menu {
                 Button("Ayarlar…") { openSettings() }
+                Button("Sigil’i tanı…") { router.tourPage = 0 }
                 Button("Kurulum…") { router.showingSetup = true }
                 Divider()
                 if updater.isAvailable {
@@ -320,7 +324,7 @@ struct EmptyStateView: View {
                 .font(.engraved(28))
             Text(model.servers.isEmpty
                  ? "Sunucunun adresini ve şifresini bir kez gir. Sigil ona özel bir anahtar üretir, sunucuya kurar ve düzenli yeniler. Her anahtarın kendi mührü olur."
-                 : "Soldan bir sunucu seç ya da ⌘K ile hızlıca bağlan.")
+                 : "Soldan bir sunucu seç, ⌘K ile hızlıca bağlan ya da aşağıdan Sigil’in neler yaptığına bak.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 440)
@@ -343,9 +347,18 @@ struct EmptyStateView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                 }
+                Button { router.tourPage = 0 } label: { Label("Nasıl çalışır?", systemImage: "play.circle") }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
             }
+            FeatureTiles().padding(.top, 12)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+struct TourPageID: Identifiable {
+    let page: Int
+    var id: Int { page }
 }

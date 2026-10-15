@@ -5,6 +5,7 @@ import SwiftUI
 /// notifications and open-at-login.
 struct SetupView: View {
     @Environment(DeckModel.self) private var model
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @AppStorage("defaultKeyStore") private var defaultKeyStore = KeyStoreKind.preferredDefault.rawValue
     @AppStorage("onboardingDone") private var onboardingDone = false
@@ -126,6 +127,10 @@ struct SetupView: View {
                     UserDefaults.standard.removeObject(forKey: Installer.justInstalledKey)
                     Haptics.success()
                     dismiss()
+                    // First time: show what Sigil can do, once.
+                    if !UserDefaults.standard.bool(forKey: "tourSeen") {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { router.tourPage = 0 }
+                    }
                 }
                 .buttonStyle(InkButtonStyle())
                 .keyboardShortcut(.defaultAction)
