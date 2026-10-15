@@ -500,8 +500,11 @@ public final class DeckModel {
             let wasReachable = s.lastReachable != false
             update(id) { $0.lastCheckedAt = Date(); $0.lastReachable = false }
             if wasReachable {
-                log(id, .warning, "Sunucuya bağlanılamadı: \(error.localizedDescription)")
-                notify?("\(s.alias) ulaşılamıyor", error.localizedDescription)
+                // With an allow list, a changed home IP is the most likely reason.
+                let hint = (s.allowList?.isEmpty == false)
+                    ? " SSH yalnızca izin listesindeki adreslere açık; IP’n değiştiyse sağlayıcının konsolundan ufw’yi kapatman gerekebilir." : ""
+                log(id, .warning, "Sunucuya bağlanılamadı: \(error.localizedDescription)\(hint)")
+                notify?("\(s.alias) ulaşılamıyor", error.localizedDescription + hint)
             }
         }
     }

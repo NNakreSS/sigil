@@ -140,6 +140,8 @@ public struct Server: Codable, Identifiable, Hashable, Sendable {
     public var tunnels: [TunnelProfile]?
     /// Other people's keys the user let in (Erişim ver).
     public var grants: [AccessGrant]?
+    /// SSH is only open to these addresses (ufw); nil when there is no allow list.
+    public var allowList: [AllowedAddress]?
     /// Reached through this other managed server (ProxyJump). One level only.
     public var jumpServerID: UUID?
     public var health: ServerHealth?
