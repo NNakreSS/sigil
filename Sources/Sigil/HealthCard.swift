@@ -18,17 +18,19 @@ struct HealthCard: View {
                     VStack(alignment: .leading, spacing: 6) {
                         if let os = h.os { Label(os, systemImage: "cpu").font(.callout) }
                         if let up = h.uptimeSeconds { Label("\(uptimeText(up)) açık", systemImage: "clock").font(.callout) }
-                        HStack(spacing: 6) {
+                        FlowLayout(spacing: 6) {
                             if let s = h.securityUpdates, let u = h.updates {
-                                Chip(text: u == 0 ? "Güncel" : "\(u) güncelleme (\(s) güvenlik)",
+                                Chip(text: u == 0 ? "Güncel" : (s > 0 ? "\(u) güncelleme · \(s) güvenlik" : "\(u) güncelleme"),
                                      systemImage: "arrow.down.circle", tint: s > 0 ? .amberInk : .verdigris)
                             }
                             if h.rebootRequired == true { Chip(text: "Yeniden başlatma gerekli", systemImage: "arrow.clockwise.circle", tint: .amberInk) }
-                            if let f = h.failedUnits, f > 0 { Chip(text: "\(f) servis çöktü", systemImage: "xmark.octagon", tint: .cinnabar) }
+                            if let f = h.failedUnits, f > 0 { Chip(text: "\(f) servis çalışmıyor", systemImage: "xmark.octagon", tint: .cinnabar) }
                         }
                     }
                     Spacer(minLength: 0)
                 }
+
+                HealthDetails(health: h)
 
                 if let history = server.healthHistory, history.count > 1 {
                     Chart {
@@ -84,6 +86,66 @@ struct HealthCard: View {
     private func uptimeText(_ s: Double) -> String {
         let d = Int(s / 86400), h = Int(s.truncatingRemainder(dividingBy: 86400) / 3600)
         return d > 0 ? "\(d) gün \(h) saat" : "\(h) saat"
+    }
+}
+
+/// What is behind each chip: which services failed, which packages want the reboot, which have security fixes.
+private struct HealthDetails: View {
+    let health: ServerHealth
+
+    var body: some View {
+        let failed = health.failedUnitList ?? []
+        let reboot = health.rebootRequired == true ? (health.rebootPackages ?? []) : []
+        let security = health.securityPackages ?? []
+        if !failed.isEmpty || !reboot.isEmpty || !security.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                if !failed.isEmpty {
+                    section("Çalışmayan servisler", systemImage: "xmark.octagon", tint: .cinnabar,
+                            hint: "Nedenini görmek için: systemctl status <servis>") {
+                        ForEach(failed, id: \.name) { u in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(u.name).font(.terminalSmall).textSelection(.enabled)
+                                if !u.description.isEmpty {
+                                    Text(u.description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                        }
+                    }
+                }
+                if !reboot.isEmpty {
+                    section("Yeniden başlatmayı isteyen güncellemeler", systemImage: "arrow.clockwise.circle", tint: .amberInk,
+                            hint: "Bu paketler yeniden başlatılana kadar eski sürümleriyle çalışır.") {
+                        packages(reboot, total: reboot.count)
+                    }
+                }
+                if !security.isEmpty {
+                    section("Güvenlik güncellemesi bekleyenler", systemImage: "shield.lefthalf.filled", tint: .amberInk,
+                            hint: "Kurmak için: sudo apt upgrade") {
+                        packages(security, total: max(health.securityUpdates ?? 0, security.count))
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func section<Content: View>(_ title: String, systemImage: String, tint: Color, hint: String,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label(title, systemImage: systemImage).font(.callout.weight(.semibold)).foregroundStyle(tint)
+            content().padding(.leading, 24)
+            Text(hint).font(.caption2).foregroundStyle(.secondary).padding(.leading, 24)
+        }
+    }
+
+    private func packages(_ names: [String], total: Int) -> some View {
+        let more = total - names.count
+        return Text(names.joined(separator: ", ") + (more > 0 ? " ve \(more) paket daha" : ""))
+            .font(.terminalSmall)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

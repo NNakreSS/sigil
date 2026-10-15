@@ -140,7 +140,8 @@ struct Card<Content: View>: View {
             content
         }
         .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Fills the height it is offered, so cards side by side (with a fixed-size row) come out equally tall.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.vellum, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
     }
@@ -177,6 +178,8 @@ struct Chip: View {
     var body: some View {
         Label(text, systemImage: systemImage)
             .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .fixedSize()   // never wraps, so chips in a row share one height
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .foregroundStyle(tint)

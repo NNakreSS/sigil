@@ -13,7 +13,13 @@ final class HealthParseTests: XCTestCase {
         disk=30842304 4614144
         updates=33 13
         reboot=1
-        failed=0
+        failed=2
+        failedunit=fwupd.service|Firmware update daemon
+        failedunit=broken.service|
+        rebootpkg=libc6
+        rebootpkg=apparmor
+        secpkg=libarchive13t64
+        secpkg=linux-image-generic
         cert=example.com|Jan  6 14:10:17 2027 GMT
         cert=old.example|Oct 20 00:00:00 2026 GMT
         """
@@ -24,6 +30,11 @@ final class HealthParseTests: XCTestCase {
         XCTAssertEqual(h.updates, 33)
         XCTAssertEqual(h.securityUpdates, 13)
         XCTAssertEqual(h.rebootRequired, true)
+        XCTAssertEqual(h.failedUnits, 2)
+        XCTAssertEqual(h.failedUnitList, [.init(name: "fwupd.service", description: "Firmware update daemon"),
+                                          .init(name: "broken.service", description: "")])
+        XCTAssertEqual(h.rebootPackages, ["libc6", "apparmor"])
+        XCTAssertEqual(h.securityPackages, ["libarchive13t64", "linux-image-generic"])
         XCTAssertEqual(h.certificates.count, 2)
         XCTAssertEqual(h.daysLeft(h.certificates[0], now: now), 84)
         XCTAssertEqual(Int((h.diskUsage! * 100).rounded()), 15)
@@ -31,6 +42,7 @@ final class HealthParseTests: XCTestCase {
         let problems = h.problems(now: now)
         XCTAssertTrue(problems.contains("Yeniden başlatma gerekiyor"))
         XCTAssertTrue(problems.contains("13 güvenlik güncellemesi bekliyor"))
+        XCTAssertTrue(problems.contains("Çalışmayan servis: fwupd.service, broken.service"))
         XCTAssertTrue(problems.contains { $0.hasPrefix("old.example sertifikası 5 gün") })
         XCTAssertFalse(problems.contains { $0.hasPrefix("Disk") })
     }

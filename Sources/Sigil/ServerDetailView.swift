@@ -39,6 +39,7 @@ struct ServerDetailView: View {
                         connectionCard(server)
                         keyCard(server)
                     }
+                    .fixedSize(horizontal: false, vertical: true)   // both cards as tall as the taller one
                     HealthCard(server: server)
                     TunnelsCard(server: server)
                     KeysAuditCard(server: server).id("keys")
