@@ -159,12 +159,19 @@ Kodda bunların dışında tek bir ağ isteği var ve o da **yalnızca sen açar
 |---|---|
 | **Üç anahtar deposu** | Sunucu başına Secure Enclave (Mac'in güvenlik çipi, her girişte Touch ID), 1Password (Touch ID) ya da macOS Keychain (tam otomatik yenileme). |
 | **Kilitlenmeyen yenileme** | Yeni anahtarla giriş doğrulanmadan eskisi silinmez. 1Password anahtarları için bildirim ve tek tıkla yenileme. |
-| **Gömülü terminal** | Sekmeli terminal, ⌘1…9 ile sunucular arasında geçiş. İstersen Terminal, iTerm2, Ghostty veya Warp. |
+| **Gömülü terminal** | Sekmeli terminal, ⌘1…9 ile geçiş, yan yana bölme (⌘D), geçmişte arama (⌘F), yazı boyutu, 8 renk teması, yazı tipi ve imleç ayarları. İstersen Terminal, iTerm2, Ghostty veya Warp. |
+| **Komut paleti (⌘P)** | Türkçe açıklamalı 134 hazır komut; sunucuda neler kurulu olduğuna göre süzülür (Docker yoksa Docker komutları çıkmaz). Boşluklu komutlar önce değerleri sorar, sistemi değiştirenler işaretlidir. |
+| **Tab ile tamamlama** | Yazarken en uygun komut altta belirir, Tab tamamlar. Öneri yoksa Tab sunucunun kendi tamamlamasına gider. |
+| **Kod yardımı** | “son bir saatteki nginx hatalarını göster” gibi bir isteği komuta çevirir; seçili hata metnini açıklar (⇧⌘E). Varsayılan Apple’ın cihaz içi modeli (Mac’ten bir şey çıkmaz); istersen kendi Claude API anahtarınla. Öneriler asla kendiliğinden çalışmaz ve Sigil şüpheli komutları işaretler. |
+| **Bakım** | Sunucuyu güncelle (önce paket listesi, sonra terminalde canlı `apt upgrade`) ve yeniden başlat (geri gelene kadar bekler, kaç saniye kapalı kaldığını söyler). |
+| **Erişim ver** | Bir arkadaşının açık anahtarıyla, şifre paylaşmadan giriş izni: kendi hesabı ya da seninki, süreli (sunucu kendisi uygular), IP sınırlı; tek tıkla geri alınır. |
+| **Dosyalar** | Sunucudaki dosyalarda gezin, önizle, sürükle-bırak yükle, indir, yeniden adlandır, sil. Tek bağlantı, tek Touch ID. |
+| **Docker** | Container’lar compose projesine göre gruplu; CPU/bellek, son loglar, canlı log, container içinde kabuk, başlat/durdur/yeniden başlat/sil. |
 | **Hızlı bağlan** | ⌘K ile ara ve bağlan. Production sunucuları kırmızıyla işaretlenir ve bağlanmadan önce onay ister. |
 | **İçe aktarma** | `~/.ssh/config` dosyasındaki sunucular şifre gerekmeden taşınır. Eski blok silinmez, yedeklenip yorum satırına alınır. |
 | **Yabancı anahtar denetimi** | `authorized_keys` içindeki tanımadığın anahtarlar listelenir. Tek tıkla kaldırılabilir. |
 | **Host key izleme** | Sunucunun kimliği değişirse alarm verilir, bağlantı durur. |
-| **Sağlık paneli** | Disk, bellek, yük, bekleyen güncellemeler, çöken servisler, SSL bitiş tarihleri. Sorun çıkınca bildirim gelir. |
+| **Sağlık paneli** | Disk, bellek, yük, bekleyen güncellemeler (hangi paketler), çöken servisler (hangileri), yeniden başlatmayı isteyen paketler, SSL bitiş tarihleri. Sorun çıkınca bildirim gelir. |
 | **Sertleştirme sihirbazı** | Şifreli girişi ve root girişini kısıtlar; ufw, fail2ban ve otomatik güvenlik güncellemelerini kurar. Sunucudaki bir bekçi süreç, Sigil 45 saniye içinde yeni bir bağlantıyla doğrulamazsa her şeyi geri alır. |
 | **Tüneller** | Kayıtlı port yönlendirmeleri (`localhost:15432 → db:5432`) tek tıkla açılır. |
 | **Hızlı eylemler** | Kayıtlı komutlar birden çok sunucuda paralel çalışır, çıktılar ayrı gösterilir. |
