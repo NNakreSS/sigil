@@ -209,11 +209,11 @@ struct SigilApp: App {
         // Like a password manager locking: an approval does not outlive the screen lock or sleep.
         for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [model] _ in
-                MainActor.assumeIsolated { Task { await model.lockApprovals() } }
+                Task { @MainActor in await model.lockApprovals() }
             }
         }
         DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [model] _ in
-            MainActor.assumeIsolated { Task { await model.lockApprovals() } }
+            Task { @MainActor in await model.lockApprovals() }
         }
         // In sandbox runs, point in-app and external ssh at the sandboxed config.
         if ProcessInfo.processInfo.environment["SIGIL_SANDBOX"] != nil { router.terminals.configFile = model.paths.mainConfig.path }
