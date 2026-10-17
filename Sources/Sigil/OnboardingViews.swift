@@ -198,25 +198,46 @@ struct NextStepsCard: View {
     let server: Server
     let harden: () -> Void
     let grant: () -> Void
+    let apps: () -> Void
     @AppStorage("nextStepsHidden") private var hiddenIDs = ""
+    /// "<server id>:<step>," for every step the user chose to skip.
+    @AppStorage("nextStepsSkipped") private var skipped = ""
 
     static func shouldShow(_ s: Server, hidden: String) -> Bool {
         !hidden.contains(s.id.uuidString) && Date().timeIntervalSince(s.createdAt) < 14 * 86400
     }
 
+    private struct Step {
+        let key: String
+        let done: Bool
+        let text: String
+        let action: (String, () -> Void)?
+    }
+
+    private var steps: [Step] {
+        let hardened = server.events.contains { $0.message.hasPrefix("Güvenlik güçlendirildi") || $0.message.hasPrefix("Sertleştirme uygulandı") }
+        let connected = router.terminals.sessions.contains { $0.serverID == server.id }
+            || UserDefaults.standard.stringArray(forKey: "connectedServers")?.contains(server.id.uuidString) == true
+        return [
+            Step(key: "added", done: true, text: "Sunucu eklendi, ona özel anahtar kuruldu", action: nil),
+            Step(key: "connect", done: connected, text: "Bağlan ve terminalde ⌘P ile komut paletini dene", action: ("Bağlan", { router.connect(server) })),
+            Step(key: "health", done: server.health != nil, text: "Sağlığını ölç: disk, bellek, güncellemeler, çöken servisler",
+                 action: ("Ölç", { Task { try? await model.collectHealth(server.id) } })),
+            Step(key: "harden", done: hardened, text: "Güvenliği güçlendir: şifreli girişi kapat, güvenlik duvarı ve fail2ban kur", action: ("Güçlendir…", harden)),
+            Step(key: "apps", done: !(server.apps ?? []).isEmpty, text: "İstersen uygulama kur: Grafana, Dozzle, PostgreSQL… (isteğe bağlı)", action: ("Uygulama kur…", apps)),
+            Step(key: "grant", done: !(server.grants ?? []).isEmpty, text: "İstersen bir arkadaşına kendi anahtarıyla erişim ver (isteğe bağlı)", action: ("Erişim ver…", grant)),
+        ]
+    }
+
+    private func isSkipped(_ key: String) -> Bool { skipped.contains("\(server.id.uuidString):\(key),") }
+
     var body: some View {
-        if Self.shouldShow(server, hidden: hiddenIDs) {
-            let hardened = server.events.contains { $0.message.hasPrefix("Güvenlik güçlendirildi") || $0.message.hasPrefix("Sertleştirme uygulandı") }
-            let connected = router.terminals.sessions.contains { $0.serverID == server.id }
-                || UserDefaults.standard.stringArray(forKey: "connectedServers")?.contains(server.id.uuidString) == true
+        let list = steps
+        // Nothing left to do: every step is done or skipped.
+        if Self.shouldShow(server, hidden: hiddenIDs), list.contains(where: { !$0.done && !isSkipped($0.key) }) {
             Card(title: "Sırada ne var?", systemImage: "sparkles") {
                 VStack(alignment: .leading, spacing: 8) {
-                    step(true, "Sunucu eklendi, ona özel anahtar kuruldu", nil)
-                    step(connected, "Bağlan ve terminalde ⌘P ile komut paletini dene", ("Bağlan", { router.connect(server) }))
-                    step(server.health != nil, "Sağlığını ölç: disk, bellek, güncellemeler, çöken servisler",
-                         ("Ölç", { Task { try? await model.collectHealth(server.id) } }))
-                    step(hardened, "Güvenliği güçlendir: şifreli girişi kapat, güvenlik duvarı ve fail2ban kur", ("Güçlendir…", harden))
-                    step(!(server.grants ?? []).isEmpty, "İstersen bir arkadaşına kendi anahtarıyla erişim ver (isteğe bağlı)", ("Erişim ver…", grant))
+                    ForEach(list, id: \.key) { step($0) }
                 }
                 HStack {
                     Button("Sigil’i tanı") { router.tourPage = 0 }.buttonStyle(.borderless).font(.caption)
@@ -227,16 +248,27 @@ struct NextStepsCard: View {
         }
     }
 
-    private func step(_ done: Bool, _ text: String, _ action: (String, () -> Void)?) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(done ? Color.verdigris : .secondary)
+    private func step(_ step: Step) -> some View {
+        let skip = !step.done && isSkipped(step.key)
+        let settled = step.done || skip
+        return HStack(spacing: 10) {
+            Image(systemName: step.done ? "checkmark.circle.fill" : (skip ? "arrow.uturn.forward.circle" : "circle"))
+                .foregroundStyle(step.done ? Color.verdigris : .secondary)
                 .contentTransition(.symbolEffect(.replace))
-            Text(text).foregroundStyle(done ? .secondary : .primary).strikethrough(done, color: .secondary)
+            Text(step.text).foregroundStyle(settled ? .secondary : .primary).strikethrough(settled, color: .secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if !done, let action { Button(action.0, action: action.1).controlSize(.small) }
+            if skip {
+                Text("atlandı").font(.caption).foregroundStyle(.secondary)
+                Button("Geri al") { skipped = skipped.replacingOccurrences(of: "\(server.id.uuidString):\(step.key),", with: "") }
+                    .buttonStyle(.borderless).font(.caption)
+            } else if !step.done, let action = step.action {
+                Button("Atla") { skipped += "\(server.id.uuidString):\(step.key)," }
+                    .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
+                    .help("Bu adımı yapmak istemiyorum")
+                Button(action.0, action: action.1).controlSize(.small)
+            }
         }
-        .animation(Motion.quick, value: done)
+        .animation(Motion.quick, value: settled)
     }
 }
