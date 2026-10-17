@@ -56,7 +56,7 @@ struct MenuBarView: View {
                         if let sid = model.activeTunnels[tid], let s = model.server(sid), let t = s.tunnels?.first(where: { $0.id == tid }) {
                             HStack {
                                 Text("\(t.name)").font(.callout)
-                                Text("localhost:\(t.localPort)").font(.terminalSmall).foregroundStyle(.secondary)
+                                Text(verbatim: "localhost:\(t.localPort)").font(.terminalSmall).foregroundStyle(.secondary)
                                 Spacer()
                                 Button { model.stopTunnel(tid) } label: { Image(systemName: "stop.circle") }.buttonStyle(.borderless)
                             }

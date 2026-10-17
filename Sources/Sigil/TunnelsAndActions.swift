@@ -28,7 +28,7 @@ struct TunnelsCard: View {
                     Spacer()
                     if running {
                         Button { Links.copy("localhost:\(t.localPort)"); Haptics.tap() } label: { Image(systemName: "doc.on.doc") }
-                            .buttonStyle(.borderless).help("localhost:\(t.localPort) kopyala")
+                            .buttonStyle(.borderless).help(Text(verbatim: "localhost:\(t.localPort) kopyala"))
                     }
                     Toggle("", isOn: Binding(get: { running }, set: { on in
                         Task {
