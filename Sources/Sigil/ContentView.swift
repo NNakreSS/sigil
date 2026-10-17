@@ -131,32 +131,25 @@ struct ContentView: View {
             .sorted { $0.alias.lowercased() < $1.alias.lowercased() }
     }
 
-    private func needsAttention(_ s: Server) -> Bool {
-        s.lastReachable == false || s.isRotationDue(retryAfter: 0) || !s.pendingKeyRemovals.isEmpty
-            || s.hostKeyMismatch == true || !s.unacknowledgedForeignKeys.isEmpty
-            || !(s.health?.problems().isEmpty ?? true)
-    }
-
     private var sidebar: some View {
         @Bindable var router = router
-        let attention = filtered.filter(needsAttention)
-        let rest = filtered.filter { !needsAttention($0) }
-        let grouped = Dictionary(grouping: rest) { $0.group ?? "" }
+        // Servers that need attention stay in their own group; the row carries the warning.
+        let grouped = Dictionary(grouping: filtered) { $0.group ?? "" }
         let groupNames = grouped.keys.filter { !$0.isEmpty }.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         return List(selection: $router.selection) {
-            if !attention.isEmpty {
-                Section {
-                    ForEach(attention) { row($0) }
-                } header: {
-                    Label("Dikkat", systemImage: "exclamationmark.circle").foregroundStyle(Color.cinnabar)
-                }
-            }
             ForEach(groupNames, id: \.self) { name in
                 Section(isExpanded: Binding(get: { !collapsed.contains(name) },
                                             set: { open in if open { collapsed.remove(name) } else { collapsed.insert(name) } })) {
                     ForEach(grouped[name] ?? []) { row($0) }
                 } header: {
-                    Label(name, systemImage: "folder")
+                    HStack(spacing: 6) {
+                        Label(name, systemImage: "folder")
+                        let count = (grouped[name] ?? []).filter { !ServerAttention.reasons($0).isEmpty }.count
+                        if count > 0 && collapsed.contains(name) {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.cinnabar)
+                                .help("Bu grupta dikkat isteyen \(count) sunucu var")
+                        }
+                    }
                 }
             }
             if let ungrouped = grouped[""], !ungrouped.isEmpty {
@@ -174,7 +167,6 @@ struct ContentView: View {
             // Double-click / Return on a server connects.
             if let id = ids.first, let s = model.server(id) { router.connect(s) }
         }
-        .animation(Motion.gentle, value: attention.map(\.id))
         .overlay {
             if !model.servers.isEmpty && filtered.isEmpty {
                 Text("“\(search)” ile eşleşen yok").foregroundStyle(.secondary)
@@ -305,16 +297,31 @@ struct ServerRow: View {
                     .foregroundStyle(Color.cinnabar)
                     .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Color.cinnabar.opacity(0.6)))
             }
-            if server.isRotationDue(retryAfter: 0) {
-                Image(systemName: "key.fill")
+            let reasons = ServerAttention.reasons(server)
+            if !reasons.isEmpty {
+                Image(systemName: "exclamationmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(Color.amberInk)
-                    .help("Anahtar yenileme zamanı geldi")
+                    .foregroundStyle(server.lastReachable == false || server.hostKeyMismatch == true ? Color.cinnabar : Color.amberInk)
+                    .help(reasons.joined(separator: "\n"))
             }
         }
         .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(server.alias), \(ServerStatusStyle.text(server.lastReachable))")
+    }
+}
+
+/// Why a server needs a look, in a few words each (sidebar tooltip).
+enum ServerAttention {
+    static func reasons(_ s: Server) -> [String] {
+        var r: [String] = []
+        if s.lastReachable == false { r.append("Ulaşılamıyor") }
+        if s.hostKeyMismatch == true { r.append("Sunucunun kimliği (host key) değişmiş") }
+        if s.isRotationDue(retryAfter: 0) { r.append("Anahtar yenileme zamanı geldi") }
+        if !s.pendingKeyRemovals.isEmpty { r.append("Eski anahtar sunucudan silinemedi") }
+        if !s.unacknowledgedForeignKeys.isEmpty { r.append("Tanınmayan anahtar var") }
+        r += s.health?.problems() ?? []
+        return r
     }
 }
 
