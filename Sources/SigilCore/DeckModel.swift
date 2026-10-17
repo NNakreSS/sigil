@@ -27,6 +27,8 @@ public final class DeckModel {
     private var tunnelProcesses: [UUID: TunnelProcess] = [:]
     /// Shared connections for open panels (file browser, Docker), by server.
     var sessions: [UUID: RemoteSession] = [:]
+    /// Open windows using each server's shared connection; it closes when the last one goes away.
+    var sessionHolders: [UUID: Int] = [:]
     /// How long one Touch ID / 1Password approval covers further connections to the same server (0: ask every time).
     public var approvalWindowMinutes = 15 {
         didSet { if approvalWindowMinutes != oldValue { writeConfig(); if approvalWindowMinutes == 0 { Task { await lockApprovals() } } } }

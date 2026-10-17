@@ -28,6 +28,28 @@ enum FileScript {
       printf "%s\\t%s\\t%s\\n" "$t" "$S" "$f"; done; fi
     """
     static let read = #"read -r P; [ -f "$P" ] || exit 4; head -c 262144 -- "$P""#
+    /// For editing: "<mtime> <size>" on the first line, then up to 512 KB of the file.
+    static let editRead = #"""
+    R=""; read -r P; [ -f "$P" ] || exit 4; [ -r "$P" ] || { sudo -n true 2>/dev/null && R="sudo -n" || exit 7; }
+    M=$($R stat -c '%Y %s' -- "$P" 2>/dev/null || $R stat -f '%m %z' -- "$P" 2>/dev/null) || exit 4
+    echo "$M"; $R head -c 524288 -- "$P"
+    """#
+    /// Saves stdin (after the path and "<mtime> <size> <new size>" lines) into the file: first into a private temp
+    /// file whose size is checked, then copied over the original so its owner, mode and inode stay. Refuses when the
+    /// file changed on the server since it was read (exit 8).
+    static let write = #"""
+    read -r P; read -r E1 E2 N
+    [ -f "$P" ] || exit 4
+    R=""; [ -w "$P" ] || { sudo -n true 2>/dev/null && R="sudo -n" || exit 7; }
+    M=$($R stat -c '%Y %s' -- "$P" 2>/dev/null || $R stat -f '%m %z' -- "$P" 2>/dev/null)
+    [ "$M" = "$E1 $E2" ] || exit 8
+    T=$(mktemp) || exit 9
+    cat > "$T"
+    [ "$(wc -c < "$T" | tr -d ' ')" = "$N" ] || { rm -f "$T"; exit 9; }
+    if [ -z "$R" ]; then cat "$T" > "$P"; else $R tee -- "$P" < "$T" >/dev/null; fi; rc=$?
+    rm -f "$T"; [ $rc -eq 0 ] || exit 9
+    $R stat -c '%Y %s' -- "$P" 2>/dev/null || $R stat -f '%m %z' -- "$P" 2>/dev/null
+    """#
     static let mkdir = #"read -r P; mkdir -p -- "$P""#
     static let rename = #"read -r A; read -r B; [ -e "$B" ] && exit 5; mv -- "$A" "$B""#
     static let delete = #"read -r P; case "$P" in ""|"/"|"/*") exit 6;; esac; rm -rf -- "$P""#
@@ -45,6 +67,11 @@ enum FileScript {
             if (a.kind == .directory) != (b.kind == .directory) { return a.kind == .directory }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
+    }
+
+    /// `sh -c '<script>'` with the script kept verbatim (newlines, quotes), unlike RemoteService.wrap.
+    static func command(_ script: String) -> String {
+        "sh -c '" + script.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     static func checkPath(_ p: String) throws -> String {
@@ -70,6 +97,55 @@ extension DeckModel {
         if r.exitCode == 4 { throw DeckError.invalid("Dosya okunamadı.") }
         guard r.succeeded else { throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut)) }
         return r.stdout
+    }
+
+    /// Largest file the editor opens.
+    public static let editableLimit = 524_288
+
+    /// A file opened for editing, with what identifies the version that was read.
+    public struct EditableFile: Sendable, Equatable {
+        public var text: String
+        /// "<mtime> <size>" when read; saving checks the file still has it.
+        public var version: String
+        /// Not valid UTF-8 text (or too big): shown, but not saved back.
+        public var readOnlyReason: String?
+    }
+
+    public func openForEditing(_ id: UUID, _ path: String) async throws -> EditableFile {
+        let r = try await runShared(id, FileScript.command(FileScript.editRead), stdin: try FileScript.checkPath(path) + "\n")
+        switch r.exitCode {
+        case 0: break
+        case 4: throw DeckError.invalid("Dosya okunamadı.")
+        case 7: throw DeckError.invalid("Bu dosyayı okuma yetkin yok (şifresiz sudo da yok).")
+        default: throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut))
+        }
+        let parts = r.stdout.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        let version = String(parts.first ?? "").trimmingCharacters(in: .whitespaces)
+        let text = parts.count > 1 ? String(parts[1]) : ""
+        let size = Int(version.split(separator: " ").last ?? "") ?? 0
+        var reason: String?
+        if size > Self.editableLimit { reason = "Dosya 512 KB’tan büyük; yalnızca başı gösteriliyor ve kaydedilemez." }
+        else if text.contains("\u{FFFD}") || text.contains("\0") { reason = "Bu bir metin dosyası değil (ya da UTF-8 değil); kaydedilemez." }
+        else if text.utf8.count != size { reason = "Dosya okunurken değişti; yeniden yükle." }
+        return EditableFile(text: text, version: version, readOnlyReason: reason)
+    }
+
+    /// Writes `text` over the file if it is still the version that was read. Returns the new version.
+    public func saveFile(_ id: UUID, _ path: String, text: String, version: String) async throws -> String {
+        let v = version.split(separator: " ")
+        guard v.count == 2, v.allSatisfy({ Int($0) != nil }) else { throw DeckError.invalid("Dosya sürümü okunamadı; yeniden yükle.") }
+        let input = try FileScript.checkPath(path) + "\n\(version) \(text.utf8.count)\n" + text
+        let r = try await runShared(id, FileScript.command(FileScript.write), stdin: input, timeout: 120)
+        switch r.exitCode {
+        case 0: break
+        case 4: throw DeckError.invalid("Dosya sunucuda artık yok.")
+        case 7: throw DeckError.invalid("Bu dosyaya yazma yetkin yok (şifresiz sudo da yok).")
+        case 8: throw DeckError.invalid("Dosya sen açtıktan sonra sunucuda değişmiş; üzerine yazılmadı. Yeniden yükleyip değişikliklerini tekrar yap.")
+        case 9: throw DeckError.ssh("Dosya yazılamadı (disk dolu ya da bağlantı koptu); sunucudaki dosya değişmedi.")
+        default: throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut))
+        }
+        log(id, .info, "Dosya düzenlendi: \(path)")
+        return r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public func makeDirectory(_ id: UUID, _ path: String) async throws {

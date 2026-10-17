@@ -78,6 +78,15 @@ extension DeckModel {
         return t
     }
 
+    /// A window (files, Docker, editor) starts using the shared connection.
+    public func holdSession(_ id: UUID) { sessionHolders[id, default: 0] += 1 }
+
+    /// A window is done with it; the connection closes when nothing else holds it.
+    public func releaseSession(_ id: UUID) {
+        let n = (sessionHolders[id] ?? 1) - 1
+        if n > 0 { sessionHolders[id] = n } else { sessionHolders[id] = nil; closeSession(id) }
+    }
+
     public func closeSession(_ id: UUID) {
         sessions[id]?.close()
         sessions[id] = nil

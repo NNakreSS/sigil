@@ -65,7 +65,8 @@ struct ServerPanelSheet: View {
         .background(WindowBackdrop())
         .navigationTitle("\(server.alias) · \(kind == .files ? "Dosyalar" : "Docker")")
         .task { await connect() }
-        .onDisappear { model.closeSession(server.id) }
+        .onAppear { model.holdSession(server.id) }
+        .onDisappear { model.releaseSession(server.id) }
     }
 
     private func connect() async {
@@ -172,7 +173,10 @@ private struct FileBrowser: View {
         .contextMenu(forSelectionType: String.self) { ids in
             if let f = files.first(where: { ids.first == $0.id }) {
                 if f.kind == .directory { Button("Aç") { Task { await load(f.path) } } }
-                if f.kind == .file { Button("Önizle") { Task { await open(f) } } }
+                if f.kind == .file {
+                    Button("Düzenle") { edit(f) }
+                    Button("Önizle") { Task { await preview(f) } }
+                }
                 Button("İndir…") { download(f) }
                 Divider()
                 Button("Yeniden adlandır…") { newName = f.name; renaming = f }
@@ -261,13 +265,22 @@ private struct FileBrowser: View {
         switch f.kind {
         case .directory, .link: await load(f.path)
         case .file:
-            if f.size > 262_144 {
-                status = "Dosya büyük (\(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file))); ilk 256 KB gösteriliyor."
-            }
-            do { openWindow(id: "preview", value: TextPreview(title: "\(server.alias) · \(f.path)", text: try await model.readFile(server.id, f.path))) }
-            catch { self.error = error.localizedDescription }
+            if f.size <= DeckModel.editableLimit { edit(f) } else { await preview(f) }
         case .other: break
         }
+    }
+
+    private func edit(_ f: RemoteFile) {
+        openWindow(id: "editor", value: RemoteFileRef(serverID: server.id, path: f.path))
+    }
+
+    private func preview(_ f: RemoteFile) async {
+        guard f.kind == .file else { return }
+        if f.size > 262_144 {
+            status = "Dosya büyük (\(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file))); ilk 256 KB gösteriliyor."
+        }
+        do { openWindow(id: "preview", value: TextPreview(title: "\(server.alias) · \(f.path)", text: try await model.readFile(server.id, f.path))) }
+        catch { self.error = error.localizedDescription }
     }
 
     private func rename(_ f: RemoteFile) async {

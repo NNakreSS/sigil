@@ -62,6 +62,36 @@ final class RemoteFilesTests: XCTestCase {
         do { try await model.deleteFile(s.id, "/"); XCTFail("refuses /") } catch {}
     }
 
+    func testEditAndSaveKeepsModeAndRefusesStaleVersions() async throws {
+        let (box, sshd, model, s) = try await setUp(); _ = sshd
+        defer { model.closeAllSessions() }
+        let file = box.root.appendingPathComponent("app $x/.env")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "A=1\nB='iki'\n".write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+
+        let opened = try await model.openForEditing(s.id, file.path)
+        XCTAssertEqual(opened.text, "A=1\nB='iki'\n")
+        XCTAssertNil(opened.readOnlyReason)
+
+        let edited = "A=1\nB='iki'\nC=\"üç $HOME\"\nno newline at end"
+        let version = try await model.saveFile(s.id, file.path, text: edited, version: opened.version)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), edited, "byte for byte, quotes and $ untouched")
+        XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int), 0o600, "mode kept")
+        XCTAssertTrue(version.hasSuffix(" \(edited.utf8.count)"))
+
+        // Someone else changes the file: the old version must not overwrite it.
+        try await Task.sleep(nanoseconds: 1_100_000_000)
+        try "changed elsewhere\n".write(to: file, atomically: false, encoding: .utf8)
+        do { _ = try await model.saveFile(s.id, file.path, text: "mine", version: version); XCTFail("stale version accepted") } catch {}
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "changed elsewhere\n")
+
+        let binary = box.root.appendingPathComponent("blob.bin")
+        try Data([0x00, 0xFF, 0xFE, 0x41]).write(to: binary)
+        let b = try await model.openForEditing(s.id, binary.path)
+        XCTAssertNotNil(b.readOnlyReason, "binary files are not saved back")
+    }
+
     func testParsesFindOutput() {
         let out = "d\t4096\t1760500000.0\tdrwxr-xr-x\troot\tetc\nf\t12\t1760500001.5\t-rw-r--r--\troot\t.bashrc\nl\t7\t1760500002\tlrwxrwxrwx\troot\tbin\n"
         let files = FileScript.parse(out, in: "/")
