@@ -35,6 +35,10 @@ public final class DeckModel {
     public private(set) var activeTunnels: [UUID: UUID] = [:]
     public private(set) var actions: [QuickAction] = []
     private var actionStore: QuickActionStore { QuickActionStore(paths: paths) }
+    /// The user's own app recipes (Uygulama kur → Kendi tariflerim).
+    public internal(set) var customRecipes: [AppRecipe] = []
+    /// Generated app passwords: the Keychain in the app, memory in tests.
+    let appSecrets: AppSecretStore
     /// Tests only: use this instead of the password for the first key installation (a non-root test sshd
     /// cannot verify passwords).
     var initialAuthOverride: RemoteAuth?
@@ -54,6 +58,7 @@ public final class DeckModel {
         self.keys = KeyService(paths: paths, protectWithKeychain: hardened)
         self.hostKeys = HostKeyService(paths: paths)
         self.remote = RemoteService(paths: paths, useKeychain: hardened, authorizedKeysPath: authorizedKeysPath)
+        self.appSecrets = hardened ? KeychainAppSecrets() : MemoryAppSecrets()
     }
 
     // MARK: Loading & scheduling
@@ -62,6 +67,7 @@ public final class DeckModel {
         let result = store.load()
         servers = result.servers
         actions = actionStore.load()
+        loadRecipes()
         if let warning = result.warning { banner = warning }
         // Keep the generated ssh config in sync with the list (e.g. after a manual edit or restore).
         if !servers.isEmpty {

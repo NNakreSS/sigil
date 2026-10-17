@@ -314,7 +314,7 @@ struct HelpButton: View {
 /// Plain-language explanations shown behind the (?) buttons, kept in one place.
 enum HelpTopic {
     case tunnels, grants, foreignKeys, health, keyAndSeal, connection, logins, events
-    case hardening, quickActions, jumpServer, keyStore, rotation, approvalWindow, allowList
+    case hardening, quickActions, jumpServer, keyStore, rotation, approvalWindow, allowList, apps
 
     var title: String {
         switch self {
@@ -333,6 +333,7 @@ enum HelpTopic {
         case .rotation: return "Anahtar yenileme"
         case .approvalWindow: return "Onay ne kadar geçerli?"
         case .allowList: return "SSH izin listesi"
+        case .apps: return "Uygulama kurmak"
         }
     }
 
@@ -353,6 +354,7 @@ enum HelpTopic {
         case .rotation: return "arrow.triangle.2.circlepath"
         case .approvalWindow: return "touchid"
         case .allowList: return "network.badge.shield.half.filled"
+        case .apps: return "square.grid.2x2"
         }
     }
 
@@ -374,6 +376,7 @@ enum HelpTopic {
         case .rotation: return "Anahtar düzenli olarak yenilenir; eskisi sunucudan silinir."
         case .approvalWindow: return "Bir Touch ID onayının ne kadar süre geçerli kalacağı."
         case .allowList: return "SSH’a yalnızca izin verdiğin IP adreslerinden bağlanılabilsin."
+        case .apps: return "Docker, Grafana, veritabanları ve daha fazlasını tek tıkla kur; bağlantı bilgileri hazır gelir."
         }
     }
 
@@ -407,6 +410,8 @@ enum HelpTopic {
             return "Anahtar seçtiğin aralıkla yenilenir: önce yeni anahtar kurulur, yeni anahtarla giriş denenir, ancak o zaman eskisi sunucudan silinir; dışarıda kalma riski yoktur. Secure Enclave ve 1Password anahtarları onayın gerektiği için sen “Yeni mühür bas”a basınca yenilenir."
         case .allowList:
             return "Sunucunun SSH portuna normalde internetteki herkes bağlanmayı deneyebilir; loglardaki binlerce şifre denemesi buradan gelir. İzin listesi açıkken güvenlik duvarı (ufw) yalnızca listedeki adreslerin bağlanmasına izin verir; diğerleri kapıya bile ulaşamaz. Web gibi diğer servisler etkilenmez. Sigil bu Mac’in adresini kendisi bulur ve listede olmadan uygulamaz; uyguladıktan sonra 45 saniye içinde yeni bir bağlantıyla giremezse sunucu eski kurallara döner."
+        case .apps:
+            return "Her uygulama sunucuda /opt/sigil/apps altında kendi docker compose klasöründe kurulur; şifreler rastgele üretilir, sunucuda .env dosyasında (yalnızca root okur) ve bu Mac’in Keychain’inde durur. Erişimi her kurulumda sen seçersin: yalnızca tünel (uygulama internete hiç açılmaz, Sigil Mac’ine getirir), alan adı + HTTPS (Caddy otomatik sertifika alır, girişi olmayan uygulamaların önüne şifre koyar) ya da herkese açık port. Kaldırınca veriler silinmez, kenara taşınır."
         case .approvalWindow:
             return "Secure Enclave ve 1Password anahtarları kullanımda onay ister. Bir onaydan sonra, seçtiğin süre boyunca aynı sunucuya açılan bağlantılar tekrar sormaz. Ekran kilitlenince, Mac uyuyunca ya da Sigil kapanınca hemen sona erer; menü çubuğundaki kilitle de anında kapatabilirsin."
         }
@@ -417,6 +422,7 @@ enum HelpTopic {
         case .tunnels: return "Örnek: Mac’te 15432 → sunucuda 5432. TablePlus ile localhost:15432’ye bağlanırsın, sunucudaki PostgreSQL’e konuşursun."
         case .grants: return "Arkadaşın şunu çalıştırıp çıkan satırı gönderir:\nssh-keygen -t ed25519\ncat ~/.ssh/id_ed25519.pub"
         case .quickActions: return "Örnek: “Disk durumu” (df -h /) eylemini tüm production sunucularında tek tıkla çalıştır."
+        case .apps: return "Kendi docker compose dosyanı “Kendi tarifin” olarak kaydedip başka sunuculara da tek tıkla kurabilirsin."
         case .allowList: return "Dikkat: ev internetinde IP değişebilir. Değişirse girmek için sağlayıcının web konsolundan “ufw disable” demen gerekir; mümkünse sabit bir IP ya da VPN adresi de ekle."
         default: return nil
         }

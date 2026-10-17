@@ -25,6 +25,7 @@ struct ServerDetailView: View {
     @State private var showingHardening = false
     @State private var showingGrant = false
     @State private var showingAllowList = false
+    @State private var showingApps = false
     @State private var scrollTarget: String?
     @State private var actionError: String?
     @State private var toast: String?
@@ -44,6 +45,7 @@ struct ServerDetailView: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)   // both cards as tall as the taller one
                     HealthCard(server: server)
+                    AppsCard(server: server, showingCatalog: $showingApps)
                     TunnelsCard(server: server)
                     GrantsCard(server: server, showingGrant: $showingGrant)
                     AllowListCard(server: server, showing: $showingAllowList)
@@ -106,6 +108,9 @@ struct ServerDetailView: View {
             }
             .sheet(isPresented: $showingAllowList) {
                 AllowListSheet(server: server)
+            }
+            .sheet(isPresented: $showingApps) {
+                AppCatalogSheet(server: server)
             }
             .alert("İşlem yapılamadı", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
                 Button("Tamam") { actionError = nil }
@@ -194,6 +199,7 @@ struct ServerDetailView: View {
                         Button("Güvenliği Güçlendir…") { showingHardening = true }
                         Button("Erişim Ver…") { showingGrant = true }
                         Button("IP İzin Listesi…") { showingAllowList = true }
+                        Button("Uygulama Kur…") { showingApps = true }
                         Button("Bağlantıyı Test Et") { Task { await model.checkStatus(s.id, interactive: true) } }
                         Button("Anahtarı Şimdi Yenile") { rotate(s) }
                         Divider()
@@ -285,7 +291,7 @@ struct ServerDetailView: View {
 
     private func connectionCard(_ s: Server) -> some View {
         Card(title: "Bağlantı", systemImage: "point.3.connected.trianglepath.dotted", help: .connection) {
-            InfoRow(label: "Adres") { Text("\(s.host):\(s.port)").font(.terminal).textSelection(.enabled) }
+            InfoRow(label: "Adres") { Text(verbatim: "\(s.host):\(s.port)").font(.terminal).textSelection(.enabled) }
             InfoRow(label: "Kullanıcı") { Text(s.user).font(.terminal) }
             InfoRow(label: "Son denetim") {
                 if let d = s.lastCheckedAt {

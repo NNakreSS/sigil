@@ -142,6 +142,8 @@ public struct Server: Codable, Identifiable, Hashable, Sendable {
     public var grants: [AccessGrant]?
     /// SSH is only open to these addresses (ufw); nil when there is no allow list.
     public var allowList: [AllowedAddress]?
+    /// Apps Sigil installed (as last read from the server).
+    public var apps: [InstalledApp]?
     /// Reached through this other managed server (ProxyJump). One level only.
     public var jumpServerID: UUID?
     public var health: ServerHealth?
