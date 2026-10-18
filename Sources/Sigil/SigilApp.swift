@@ -173,6 +173,16 @@ struct SigilApp: App {
         }
         .defaultSize(width: 860, height: 640)
 
+        WindowGroup("Düzenleyici", id: "editor", for: RemoteFileRef.self) { $ref in
+            if let ref, let server = model.server(ref.serverID) {
+                FileEditorWindow(server: server, path: ref.path)
+                    .environment(model)
+                    .environment(\.locale, trLocale)
+                    .tint(Color.accentInk)
+            }
+        }
+        .defaultSize(width: 860, height: 640)
+
         WindowGroup("Önizleme", id: "preview", for: TextPreview.self) { $preview in
             if let preview {
                 PreviewWindow(preview: preview).tint(Color.accentInk)

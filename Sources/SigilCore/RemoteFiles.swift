@@ -31,7 +31,7 @@ enum FileScript {
     /// For editing: "<mtime> <size>" on the first line, then up to 512 KB of the file.
     static let editRead = #"""
     R=""; read -r P; [ -f "$P" ] || exit 4; [ -r "$P" ] || { sudo -n true 2>/dev/null && R="sudo -n" || exit 7; }
-    M=$($R stat -c '%Y %s' -- "$P" 2>/dev/null || $R stat -f '%m %z' -- "$P" 2>/dev/null) || exit 4
+    M=$($R stat -L -c '%Y %s' -- "$P" 2>/dev/null || $R stat -L -f '%m %z' -- "$P" 2>/dev/null) || exit 4
     echo "$M"; $R head -c 524288 -- "$P"
     """#
     /// Saves stdin (after the path and "<mtime> <size> <new size>" lines) into the file: first into a private temp
@@ -41,14 +41,14 @@ enum FileScript {
     read -r P; read -r E1 E2 N
     [ -f "$P" ] || exit 4
     R=""; [ -w "$P" ] || { sudo -n true 2>/dev/null && R="sudo -n" || exit 7; }
-    M=$($R stat -c '%Y %s' -- "$P" 2>/dev/null || $R stat -f '%m %z' -- "$P" 2>/dev/null)
+    M=$($R stat -L -c '%Y %s' -- "$P" 2>/dev/null || $R stat -L -f '%m %z' -- "$P" 2>/dev/null)
     [ "$M" = "$E1 $E2" ] || exit 8
     T=$(mktemp) || exit 9
     cat > "$T"
     [ "$(wc -c < "$T" | tr -d ' ')" = "$N" ] || { rm -f "$T"; exit 9; }
     if [ -z "$R" ]; then cat "$T" > "$P"; else $R tee -- "$P" < "$T" >/dev/null; fi; rc=$?
     rm -f "$T"; [ $rc -eq 0 ] || exit 9
-    $R stat -c '%Y %s' -- "$P" 2>/dev/null || $R stat -f '%m %z' -- "$P" 2>/dev/null
+    $R stat -L -c '%Y %s' -- "$P" 2>/dev/null || $R stat -L -f '%m %z' -- "$P" 2>/dev/null
     """#
     static let mkdir = #"read -r P; mkdir -p -- "$P""#
     static let rename = #"read -r A; read -r B; [ -e "$B" ] && exit 5; mv -- "$A" "$B""#

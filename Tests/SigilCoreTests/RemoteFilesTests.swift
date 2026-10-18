@@ -86,6 +86,15 @@ final class RemoteFilesTests: XCTestCase {
         do { _ = try await model.saveFile(s.id, file.path, text: "mine", version: version); XCTFail("stale version accepted") } catch {}
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "changed elsewhere\n")
 
+        // Through a symlink (nginx sites-enabled): the target is read and written, the link stays.
+        let link = box.root.appendingPathComponent("link.env")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+        let viaLink = try await model.openForEditing(s.id, link.path)
+        XCTAssertNil(viaLink.readOnlyReason)
+        _ = try await model.saveFile(s.id, link.path, text: "via link\n", version: viaLink.version)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "via link\n")
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: link.path))
+
         let binary = box.root.appendingPathComponent("blob.bin")
         try Data([0x00, 0xFF, 0xFE, 0x41]).write(to: binary)
         let b = try await model.openForEditing(s.id, binary.path)
