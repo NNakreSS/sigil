@@ -138,7 +138,8 @@ struct FileEditorWindow: View {
                 .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.passed == true ? "\(c.check.title): yapılandırma geçerli."
-                     : c.passed == false ? "\(c.check.title) yeni yapılandırmayı kabul etmedi. Servisi yeniden başlatma; önce düzelt ya da geri al."
+                     : c.passed == false ? "\(c.check.title) yeni yapılandırmayı kabul etmedi. \(c.check.failureAdvice)"
+                     : c.check == .compose && !c.output.isEmpty ? "Bu dosya tek başına doğrulanamadı (değişkenleri .env’den ya da başka bir compose dosyasından geliyor); yapı olarak sorun bulunmadı."
                      : "\(c.check.title) bu sunucuda çalıştırılamadı (kurulu değil ya da sudo şifre istiyor).")
                     .font(.callout.weight(.medium))
                 if c.passed != true, !c.output.isEmpty {

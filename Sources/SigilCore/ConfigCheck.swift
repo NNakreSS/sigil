@@ -24,6 +24,16 @@ public enum ConfigCheck: String, Sendable {
         }
     }
 
+    /// What a failed check means for what is running.
+    public var failureAdvice: String {
+        switch self {
+        case .nginx, .caddy: return "Servisi yeniden yükleme; önce düzelt ya da geri al. Çalışan servis eski yapılandırmayla devam ediyor."
+        case .sshd: return "sshd’yi yeniden başlatma, yoksa bağlantı kurulamayabilir; önce düzelt ya da geri al."
+        case .compose: return "Çalışan container’lar etkilenmedi; “docker compose up” yapmadan önce düzelt ya da geri al."
+        case .systemd: return "Servisi yeniden başlatmadan önce düzelt ya da geri al."
+        }
+    }
+
     /// The service can be told to pick up the new config (nginx and Caddy reload without dropping connections).
     public var reloadTitle: String? {
         switch self {
@@ -49,9 +59,15 @@ public enum ConfigCheck: String, Sendable {
         case .compose:
             body = #"""
             cd "$(dirname "$P")" || exit 3
-            if docker compose version >/dev/null 2>&1; then docker compose -f "$P" config -q 2>&1
-            elif command -v docker-compose >/dev/null 2>&1; then docker-compose -f "$P" config -q 2>&1
+            if docker compose version >/dev/null 2>&1; then C="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then C="docker-compose"
             else exit 3; fi
+            # Structure only: ${VAR} and ${VAR:?…} come from .env or other files at deploy time, not from this one.
+            OUT=$($C -f "$P" config -q --no-interpolate 2>&1); rc=$?
+            case "$OUT" in *"unknown flag"*|*"no such option"*) OUT=$($C -f "$P" config -q 2>&1); rc=$? ;; esac
+            printf '%s\n' "$OUT"
+            case "$OUT" in *"required variable"*|*"error while interpolating"*|*"is not set"*) exit 3 ;; esac
+            exit $rc
             """#
         case .caddy:
             body = #"""

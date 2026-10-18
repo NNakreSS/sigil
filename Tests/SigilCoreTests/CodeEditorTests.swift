@@ -91,6 +91,8 @@ final class CodeEditorTests: XCTestCase {
         XCTAssertTrue(lines.contains(6), "unterminated quote")
         XCTAssertFalse(lines.contains(8), "image under a different parent is fine")
         XCTAssertTrue(CodeLint.check("ports:\n  - \"80:80\"\n  - 443:443\nurl: http://x\n", language: .yaml).isEmpty)
+        // A list item with a colon is a plain string (compose security_opt).
+        XCTAssertTrue(CodeLint.check("security_opt:\n  - no-new-privileges:true\n  - label:disable\n", language: .yaml).isEmpty)
     }
 
     func testJsonLint() {
@@ -147,5 +149,32 @@ final class CodeEditorTests: XCTestCase {
         _ = try await Shell.run("/usr/local/bin/docker", ["exec", "sigil-test-server", "rm", "-f", "/etc/nginx/sites-enabled/sigil-lint-test"])
         XCTAssertNotEqual(bad.exitCode, 0)
         XCTAssertEqual(ConfigCheck.diagnostics(bad.stdout, path: "/etc/nginx/sites-enabled/sigil-lint-test").first?.line, 2)
+
+        // A compose overlay that needs a variable from .env is fine on its own; a real schema error is not.
+        let setup = #"""
+        mkdir -p /tmp/sigil-compose
+        cat > /tmp/sigil-compose/compose.hook.yml <<'EOF'
+        services:
+          hook:
+            image: node:22-alpine
+            environment:
+              S: ${S:?set S in .env}
+            security_opt:
+              - no-new-privileges:true
+        EOF
+        cat > /tmp/sigil-compose/compose.bad.yml <<'EOF'
+        services:
+          web:
+            image: x
+            ports: 80
+        EOF
+        """#
+        _ = try await Shell.run("/usr/local/bin/docker", ["exec", "sigil-test-server", "sh", "-c", setup])
+        let overlay = try await run(.compose, "/tmp/sigil-compose/compose.hook.yml")
+        let broken = try await run(.compose, "/tmp/sigil-compose/compose.bad.yml")
+        _ = try await Shell.run("/usr/local/bin/docker", ["exec", "sigil-test-server", "rm", "-rf", "/tmp/sigil-compose"])
+        XCTAssertEqual(overlay.exitCode, 0, overlay.stdout)
+        XCTAssertEqual(broken.exitCode, 1, broken.stdout)
+        XCTAssertTrue(broken.stdout.contains("ports"))
     }
 }

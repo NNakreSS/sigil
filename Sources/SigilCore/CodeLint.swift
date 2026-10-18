@@ -97,7 +97,8 @@ public enum CodeLint {
                 out.append(Diagnostic(line: n, message: "YAML’de girinti için tab kullanılamaz; boşluk kullan."))
                 continue
             }
-            if line.range(of: #"^\s*-?\s*[A-Za-z_][\w.-]*:[^\s:/\[{'"]"#, options: .regularExpression) != nil
+            // `key:value` on a mapping line is a mistake; in a list item (`- no-new-privileges:true`) it is a plain string.
+            if line.range(of: #"^\s*[A-Za-z_][\w.-]*:[^\s:/\[{'"]"#, options: .regularExpression) != nil
                 && line.range(of: #"^\s*-?\s*[A-Za-z_][\w.-]*:\d+(:\d+)?\s*$"#, options: .regularExpression) == nil {
                 out.append(Diagnostic(line: n, message: "“:” işaretinden sonra boşluk olmalı.", severity: .warning))
             }
