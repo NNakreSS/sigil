@@ -62,7 +62,7 @@ enum SudoScript {
         if command.hasPrefix(prefix) {
             // The script is on the command line, so the password comes first on stdin, before the script's own input.
             let pre = "IFS= read -r SIGIL_PW || exit 1; " + lines.joined(separator: " ") + " "
-            return (prefix + pre + command.dropFirst(prefix.count), password + "\n" + (stdin ?? ""))
+            return (prefix + pre + String(command.dropFirst(prefix.count)), password + "\n" + (stdin ?? ""))
         }
         return nil
     }

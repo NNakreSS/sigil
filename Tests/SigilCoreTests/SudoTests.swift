@@ -24,7 +24,7 @@ final class SudoTests: XCTestCase {
             XCTAssertEqual(r.stdin, pw + "\n/etc/shadow\n", "password, then the script's own input")
             XCTAssertTrue(r.command.hasPrefix("sh -c 'IFS= read -r SIGIL_PW || exit 1; if "))
             // What the login shell runs: sh -c '<script>', checked with sh -n.
-            try await syntax(["-c", "sh -n" + r.command.dropFirst(2)])
+            try await syntax(["-c", "sh -n" + String(r.command.dropFirst(2))])
         }
     }
 
