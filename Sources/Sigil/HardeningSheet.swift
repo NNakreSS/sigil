@@ -91,6 +91,9 @@ struct HardeningSheet: View {
                 Label("“\(state.user)” root değil ve şifresiz sudo yetkisi yok. Sigil sadece durumu gösterebilir.", systemImage: "lock.trianglebadge.exclamationmark")
                     .font(.callout).foregroundStyle(Color.amberInk)
             }
+            if !state.canAdminister || model.isSudoUnlocked(server.id) {
+                SudoUnlockView(server: server) { await load() }
+            }
             if keepsPasswordForRecovery {
                 Label("Secure Enclave anahtarı bu Mac’e bağlı: Mac kaybolursa sunucuya şifreyle girebilmen için şifreli giriş varsayılan olarak açık bırakılıyor.",
                       systemImage: "lifepreserver")

@@ -2,6 +2,7 @@ import Foundation
 
 /// The recipes that ship with Sigil. Every app joins the shared `sigil` Docker network, so they reach each other
 /// by container name (Adminer → sigil-postgres). Ports bind to 127.0.0.1 unless published on purpose.
+/// Grafana and Glances are the exception: they read the host's network counters, so they run on the host network.
 public enum AppCatalog {
     static let dockerID = "docker"
 
@@ -23,6 +24,9 @@ public enum AppCatalog {
         docker,
 
         // MARK: Monitoring
+        // node_exporter must share the host's network namespace, or it only sees its own container's eth0. A bridge
+        // container can't reach it there once ufw is on (container → host is ufw INPUT), so Prometheus and Grafana
+        // join it on the host network; Prometheus and node_exporter listen on loopback only.
         AppRecipe(
             id: "grafana", name: "Grafana + Prometheus", category: .monitoring,
             summary: "Sunucunun CPU, bellek, disk ve ağ grafikleri. Prometheus ve node_exporter ile hazır panoyla gelir.",
@@ -33,9 +37,10 @@ public enum AppCatalog {
                 image: grafana/grafana:latest
                 container_name: sigil-grafana
                 restart: unless-stopped
-                ports:
-                  - "{{BIND}}{{PORT}}:3000"
+                network_mode: host
                 environment:
+                  GF_SERVER_HTTP_ADDR: "{{ADDR}}"
+                  GF_SERVER_HTTP_PORT: "{{PORT}}"
                   GF_SECURITY_ADMIN_USER: admin
                   GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
                   GF_SERVER_ROOT_URL: "{{URL}}"
@@ -50,9 +55,11 @@ public enum AppCatalog {
                 image: prom/prometheus:latest
                 container_name: sigil-prometheus
                 restart: unless-stopped
+                network_mode: host
                 command:
                   - --config.file=/etc/prometheus/prometheus.yml
                   - --storage.tsdb.retention.time=15d
+                  - --web.listen-address=127.0.0.1:19090
                 volumes:
                   - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
                   - prometheus:/prometheus
@@ -60,15 +67,16 @@ public enum AppCatalog {
                 image: prom/node-exporter:latest
                 container_name: sigil-node-exporter
                 restart: unless-stopped
+                network_mode: host
                 pid: host
                 command:
                   - --path.rootfs=/host
+                  - --web.listen-address=127.0.0.1:19100
                 volumes:
                   - /:/host:ro
             volumes:
               grafana:
               prometheus:
-            \(network)
             """,
             files: [
                 "prometheus.yml": """
@@ -77,12 +85,12 @@ public enum AppCatalog {
                 scrape_configs:
                   - job_name: node
                     static_configs:
-                      - targets: ["sigil-node-exporter:9100"]
+                      - targets: ["127.0.0.1:19100"]
                         labels:
                           instance: "{{SERVER}}"
                   - job_name: prometheus
                     static_configs:
-                      - targets: ["localhost:9090"]
+                      - targets: ["127.0.0.1:19090"]
                 """,
                 "provisioning/datasources/prometheus.yml": """
                 apiVersion: 1
@@ -91,7 +99,7 @@ public enum AppCatalog {
                     uid: sigil-prometheus
                     type: prometheus
                     access: proxy
-                    url: http://sigil-prometheus:9090
+                    url: http://127.0.0.1:19090
                     isDefault: true
                 """,
                 "provisioning/dashboards/sigil.yml": """
@@ -149,6 +157,32 @@ public enum AppCatalog {
             """,
             port: 8090, ownLogin: false, minMemoryMB: 64),
 
+        // For a Prometheus on another machine: on the host network so ufw (not Docker) decides who reaches the port.
+        AppRecipe(
+            id: "node-exporter", name: "Node Exporter", category: .monitoring,
+            summary: "Sunucunun CPU, bellek, disk ve ağ metriklerini başka bir makinedeki Prometheus’a açar. Yalnızca izin verdiğin adresler erişir.",
+            symbol: "waveform.path.ecg", website: "https://github.com/prometheus/node_exporter",
+            compose: """
+            services:
+              node-exporter:
+                image: prom/node-exporter:{{VERSION}}
+                container_name: sigil-node-exporter-remote
+                restart: unless-stopped
+                network_mode: host
+                pid: host
+                command:
+                  - --path.rootfs=/host
+                  - --web.listen-address={{ADDR}}:{{PORT}}
+                volumes:
+                  - /:/host:ro
+            """,
+            port: 9100, http: false, ownLogin: false, access: [.allowList],
+            inputs: [AppInput(name: "VERSION", label: "Sürüm", defaultValue: "latest", kind: .imageTag,
+                              help: "prom/node-exporter imaj etiketi, ör. v1.9.0. latest her güncellemede en yenisini alır.")],
+            info: ["Prometheus hedefi: {{ADDRESS}}", "Metrikler: http://{{ADDRESS}}/metrics"],
+            notes: "Prometheus sunucusunda prometheus.yml’deki scrape_configs altına bu sunucuyu ekle: - targets: [\"<sunucu>:9100\"]. Güvenlik duvarı (ufw) açık olmalı; kural kaldırınca silinir.",
+            minMemoryMB: 32),
+
         AppRecipe(
             id: "glances", name: "Glances", category: .monitoring,
             summary: "Tarayıcıda canlı htop: işlemciler, bellek, disk, ağ, işlemler ve container’lar tek ekranda.",
@@ -159,14 +193,12 @@ public enum AppCatalog {
                 image: nicolargo/glances:latest-full
                 container_name: sigil-glances
                 restart: unless-stopped
+                network_mode: host
                 pid: host
                 environment:
-                  GLANCES_OPT: "-w"
-                ports:
-                  - "{{BIND}}{{PORT}}:61208"
+                  GLANCES_OPT: "-w --bind {{ADDR}} --port {{PORT}}"
                 volumes:
                   - /var/run/docker.sock:/var/run/docker.sock:ro
-            \(network)
             """,
             port: 61208, ownLogin: false, minMemoryMB: 128),
 

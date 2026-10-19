@@ -38,7 +38,8 @@ public enum MaintenanceScript {
     static let reboot = #"""
     if [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null; then exit 3; fi
     S=""; [ "$(id -u)" -eq 0 ] || S="sudo -n"
-    nohup sh -c "sleep 2; $S systemctl reboot || $S reboot" </dev/null >/dev/null 2>&1 &
+    # sudo first, so the whole job runs as root (and Sigil's sudo-with-password helper covers it).
+    $S nohup sh -c "sleep 2; systemctl reboot || reboot" </dev/null >/dev/null 2>&1 &
     echo scheduled
     """#
 

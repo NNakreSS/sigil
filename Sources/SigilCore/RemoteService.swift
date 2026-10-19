@@ -12,6 +12,8 @@ public struct RemoteTarget: Sendable, Equatable {
     /// Share one approved connection for this many minutes (ControlMaster auto + ControlPersist): Touch ID or
     /// 1Password approval is asked once per window, like the terminal's `ssh <alias>` with Sigil's config.
     public var persist: (directory: String, minutes: Int)?
+    /// For a user whose sudo asks for a password: Sigil's scripts get it through `SudoScript` (never a command line).
+    public var sudoPassword: String?
     public init(host: String, port: Int, user: String, proxyCommand: String? = nil, controlPath: String? = nil) {
         self.host = host
         self.port = port
@@ -46,6 +48,7 @@ public enum RemoteAuth: Sendable {
 public struct RemoteService: Sendable {
     let paths: DeckPaths
     let useKeychain: Bool
+    let sudoFailures = SudoFailureSink()
 
     public init(paths: DeckPaths, useKeychain: Bool = true, authorizedKeysPath: String = "~/.ssh/authorized_keys") {
         precondition(
@@ -258,6 +261,16 @@ public struct RemoteService: Sendable {
 
     func execute(_ target: RemoteTarget, _ auth: RemoteAuth, _ command: String, stdin: String? = nil,
                  timeout: TimeInterval? = nil) async throws -> ShellResult {
+        if let pw = target.sudoPassword, let sudo = SudoScript.apply(password: pw, command: command, stdin: stdin) {
+            var plain = target
+            plain.sudoPassword = nil
+            let r = try await execute(plain, auth, sudo.command, stdin: sudo.stdin, timeout: timeout)
+            if let f = SudoScript.failure(r.stdout) {
+                sudoFailures.report(target, f)
+                throw DeckError.sudo(f)
+            }
+            return r
+        }
         let args = arguments(for: target, auth: auth, command: command)
         switch auth {
         case .key, .userConfig:

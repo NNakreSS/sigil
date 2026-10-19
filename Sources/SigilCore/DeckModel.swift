@@ -41,6 +41,9 @@ public final class DeckModel {
     public internal(set) var customRecipes: [AppRecipe] = []
     /// Generated app passwords: the Keychain in the app, memory in tests.
     let appSecrets: AppSecretStore
+    /// Sudo passwords given this run (server id → password), only in memory; `sudoStore` keeps one when asked to.
+    var sudoPasswords: [UUID: String] = [:]
+    let sudoStore: SudoPasswordStore
     /// Tests only: use this instead of the password for the first key installation (a non-root test sshd
     /// cannot verify passwords).
     var initialAuthOverride: RemoteAuth?
@@ -61,6 +64,8 @@ public final class DeckModel {
         self.hostKeys = HostKeyService(paths: paths)
         self.remote = RemoteService(paths: paths, useKeychain: hardened, authorizedKeysPath: authorizedKeysPath)
         self.appSecrets = hardened ? KeychainAppSecrets() : MemoryAppSecrets()
+        self.sudoStore = hardened ? KeychainSudoPasswords() : MemorySudoPasswords()
+        remote.sudoFailures.set { [weak self] t, f in Task { @MainActor in self?.sudoRefused(t, f) } }
     }
 
     // MARK: Loading & scheduling
@@ -936,10 +941,16 @@ public final class DeckModel {
     }
 
     public func target(for s: Server) -> RemoteTarget {
-        guard let j = s.jumpServerID, let jump = server(j) else { return RemoteTarget(host: s.host, port: s.port, user: s.user) }
-        let pc = remote.proxyCommand(through: RemoteTarget(host: jump.host, port: jump.port, user: jump.user),
-                                     auth: auth(jump.store, jump.keyFileName))
-        return RemoteTarget(host: s.host, port: s.port, user: s.user, proxyCommand: pc)
+        var t: RemoteTarget
+        if let j = s.jumpServerID, let jump = server(j) {
+            let pc = remote.proxyCommand(through: RemoteTarget(host: jump.host, port: jump.port, user: jump.user),
+                                         auth: auth(jump.store, jump.keyFileName))
+            t = RemoteTarget(host: s.host, port: s.port, user: s.user, proxyCommand: pc)
+        } else {
+            t = RemoteTarget(host: s.host, port: s.port, user: s.user)
+        }
+        t.sudoPassword = sudoPasswords[s.id]
+        return t
     }
 
     func draftTarget(_ d: ServerDraft) throws -> RemoteTarget {

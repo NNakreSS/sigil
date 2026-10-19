@@ -81,6 +81,9 @@ enum AppText {
         case .tunnel: return m.port.map { "Yalnızca tünelle · sunucuda 127.0.0.1:\($0)" } ?? "Sunucuda çalışıyor"
         case .domain: return m.domain.map { "https://\($0)" } ?? "Alan adıyla"
         case .publicPort: return m.port.map { "Herkese açık · port \($0)" } ?? "Herkese açık"
+        case .allowList:
+            let from = (m.allowFrom ?? []).joined(separator: ", ")
+            return m.port.map { "Port \($0) · yalnızca \(from)" } ?? "Belirli adreslere açık"
         }
     }
 
@@ -97,6 +100,8 @@ enum AppText {
             return recipe.http
                 ? "Port sunucunun adresinde herkese açılır, trafik şifrelenmez (http). Docker portu güvenlik duvarını (ufw) atlayarak açar."
                 : "Port sunucunun adresinde herkese açılır; uygulamanın şifresi tek korumadır. Mümkünse tüneli seç."
+        case .allowList:
+            return "Port sunucunun adresinde dinler; güvenlik duvarı (ufw) yalnızca yazdığın adreslere izin verir. Kural, uygulama başlamadan önce eklenir; ufw kapalıysa kurulum yapılmaz."
         }
     }
 }
@@ -206,7 +211,8 @@ struct AppDetailSheet: View {
                         Text(app.manifest.name).font(.engraved(22, weight: .bold))
                         HStack(spacing: 6) {
                             AppStatusChip(app: app)
-                            Chip(text: app.manifest.access.title, systemImage: app.manifest.access == .tunnel ? "lock.fill" : "globe", tint: .accentInk)
+                            Chip(text: app.manifest.access.title, systemImage: app.manifest.access == .tunnel ? "lock.fill"
+                                 : app.manifest.access == .allowList ? "network.badge.shield.half.filled" : "globe", tint: .accentInk)
                             Text(server.alias).font(.terminalSmall).foregroundStyle(.secondary)
                         }
                     }
@@ -456,6 +462,8 @@ private struct RecipePane: View {
     @State private var warnings: [String] = []
     @State private var dns: DNSMatch?
     @State private var publicOK = false
+    @State private var inputValues: [String: String] = [:]
+    @State private var allowFrom = ""
 
     private var installedApp: InstalledApp? { model.server(server.id)?.apps?.first { $0.id == recipe.id } }
     private var needsDocker: Bool { !recipe.isDockerEngine && !host.dockerReady }
@@ -522,6 +530,14 @@ private struct RecipePane: View {
             if host.diskFreeMB > 0 {
                 check(host.diskFreeMB > 2048, "Boş disk \(host.diskFreeMB / 1024) GB", warnOnly: true)
             }
+            if !host.admin || model.isSudoUnlocked(server.id) {
+                SudoUnlockView(server: server) { if let fresh = try? await model.appHost(server.id) { host = fresh } }
+            }
+            if access == .allowList {
+                check(host.ufwActive, host.ufwActive ? "Güvenlik duvarı (ufw) açık"
+                      : host.admin ? "Güvenlik duvarı (ufw) kapalı; önce SSH izin listesi kartından aç"
+                      : "Güvenlik duvarı kuralı için root/sudo gerekiyor")
+            }
         }
     }
 
@@ -578,10 +594,41 @@ private struct RecipePane: View {
                             }
                         }
                     }
+                    if access == .allowList {
+                        GridRow {
+                            Text("Erişebilecek adresler").foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("", text: $allowFrom, prompt: Text("203.0.113.7, 198.51.100.0/24")).textFieldStyle(.roundedBorder).frame(width: 280)
+                                if !allowFrom.trimmingCharacters(in: .whitespaces).isEmpty, let e = problem({ _ = try AppScript.allowedAddresses([allowFrom]) }) {
+                                    Text(e).font(.caption).foregroundStyle(Color.cinnabar).fixedSize(horizontal: false, vertical: true)
+                                } else {
+                                    Text("Ör. Prometheus sunucusunun IP’si. Virgülle birden çok adres ya da ağ yazılabilir.")
+                                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
                 }
                 if access == .publicPort {
                     Toggle(recipe.http ? "Şifrelenmemiş (http) olarak herkese açık olacağını biliyorum." : "Portun internete açık olacağını biliyorum.", isOn: $publicOK)
                         .font(.callout)
+                }
+            }
+            if let inputs = recipe.inputs, !inputs.isEmpty {
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
+                    ForEach(inputs) { input in
+                        GridRow {
+                            Text(input.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("", text: binding(input), prompt: Text(input.defaultValue)).textFieldStyle(.roundedBorder).frame(width: 280)
+                                if let e = problem({ _ = try input.validate(inputValues[input.name] ?? "") }) {
+                                    Text(e).font(.caption).foregroundStyle(Color.cinnabar).fixedSize(horizontal: false, vertical: true)
+                                } else if let help = input.help {
+                                    Text(help).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if let notes = recipe.notes {
@@ -609,8 +656,19 @@ private struct RecipePane: View {
             guard (1...65535).contains(port), !host.listening.contains(port), !host.apps.contains(where: { $0.manifest.port == port }) else { return false }
             if access == .domain && (try? AppScript.validateDomain(domain)) == nil { return false }
             if access == .publicPort && !publicOK { return false }
+            if access == .allowList && (!host.ufwActive || (try? AppScript.allowedAddresses([allowFrom])) == nil) { return false }
         }
+        for input in recipe.inputs ?? [] where (try? input.validate(inputValues[input.name] ?? "")) == nil { return false }
         return true
+    }
+
+    private func binding(_ input: AppInput) -> Binding<String> {
+        Binding(get: { inputValues[input.name] ?? "" }, set: { inputValues[input.name] = $0 })
+    }
+
+    /// The message of the error `check` throws, or nil.
+    private func problem(_ check: () throws -> Void) -> String? {
+        do { try check(); return nil } catch { return error.localizedDescription }
     }
 
     @ViewBuilder private var dnsLine: some View {
@@ -733,7 +791,9 @@ private struct RecipePane: View {
                 guard host.dockerReady else { throw DeckError.invalid("Docker kuruldu ama henüz kullanılamıyor; bir dakika sonra yeniden dene.") }
             }
             let report = try await model.installApp(server.id, recipe, access: access, port: recipe.port == nil ? nil : port,
-                                                    domain: domain) { s in withAnimation(Motion.gentle) { steps.append(s) } }
+                                                    domain: domain, inputs: inputValues, allowFrom: [allowFrom]) { s in
+                withAnimation(Motion.gentle) { steps.append(s) }
+            }
             warnings = report.warnings
             if let fresh = try? await model.appHost(server.id) { host = fresh }
             Haptics.success()

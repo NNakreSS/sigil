@@ -97,6 +97,13 @@ struct AllowListSheet: View {
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !state.canAdminister {
+                Label("Bu kullanıcı root değil ve şifresiz sudo yetkisi yok; güvenlik duvarı değiştirilemez.", systemImage: "lock.trianglebadge.exclamationmark")
+                    .font(.callout).foregroundStyle(Color.amberInk)
+            }
+            if !state.canAdminister || model.isSudoUnlocked(server.id) {
+                SudoUnlockView(server: server) { await load() }
+            }
             HStack(spacing: 8) {
                 Image(systemName: state.isOn ? "lock.fill" : "lock.open").foregroundStyle(state.isOn ? Color.verdigris : Color.amberInk)
                 Text(state.isOn ? "Şu an SSH yalnızca aşağıdaki adreslere açık." : "Şu an SSH portu (\(state.sshPort)) herkese açık.")

@@ -10,6 +10,7 @@ public enum DeckError: LocalizedError, Equatable {
     case onePassword(String)
     case busy
     case notFound
+    case sudo(SudoFailure)
 
     public var errorDescription: String? {
         switch self {
@@ -22,6 +23,7 @@ public enum DeckError: LocalizedError, Equatable {
         case .onePassword(let m): return "1Password: \(m)"
         case .busy: return "Bu sunucu için başka bir işlem sürüyor."
         case .notFound: return "Sunucu bulunamadı."
+        case .sudo(let f): return f.message
         }
     }
 }

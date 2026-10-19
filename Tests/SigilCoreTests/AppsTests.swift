@@ -10,10 +10,12 @@ final class AppsTests: XCTestCase {
     private func plan(_ recipe: AppRecipe, _ access: AppAccess) -> AppScript.Plan {
         var secrets: [String: String] = [:]
         for n in recipe.secretNames(for: access) { secrets[n] = AppScript.secret() }
+        var vars = ["BIND": access.listensOutside ? "" : "127.0.0.1:", "ADDR": access.listensOutside ? "" : "127.0.0.1",
+                    "PORT": recipe.port.map(String.init) ?? "",
+                    "URL": "http://localhost:1", "HTTPS": "false", "DOMAIN": "", "SERVER": "web", "TZ": "UTC"]
+        for input in recipe.inputs ?? [] { vars[input.name] = input.defaultValue }
         return AppScript.Plan(recipe: recipe, access: access, port: recipe.port, domain: access == .domain ? "app.example.com" : nil,
-                              secrets: secrets,
-                              vars: ["BIND": access == .publicPort ? "" : "127.0.0.1:", "PORT": recipe.port.map(String.init) ?? "",
-                                     "URL": "http://localhost:1", "HTTPS": "false", "DOMAIN": "", "SERVER": "web", "TZ": "UTC"])
+                              secrets: secrets, vars: vars)
     }
 
     func testEveryScriptIsValidShell() async throws {
@@ -31,6 +33,7 @@ final class AppsTests: XCTestCase {
             try await syntax(AppScript.pull(recipe.id))
             try await syntax(AppScript.up(recipe.id))
             try await syntax(AppScript.openPort(recipe.id, port: 1234))
+            try await syntax(AppScript.allowFrom(recipe.id, port: 1234, addresses: ["203.0.113.7", "2001:db8::/32"]))
             try await syntax(AppScript.finish(AppManifest(id: recipe.id, name: recipe.name, symbol: "x", port: recipe.port, access: .tunnel,
                                                           domain: nil, http: true, dir: "", custom: false)))
         }
@@ -47,7 +50,11 @@ final class AppsTests: XCTestCase {
             if r.isDockerEngine { continue }
             XCTAssertTrue(r.compose.contains("services:"), r.id)
             XCTAssertTrue(r.compose.contains("container_name: sigil-"), r.id)
-            if r.port != nil { XCTAssertTrue(r.compose.contains("\"{{BIND}}{{PORT}}:"), "\(r.id) publishes its port through BIND") }
+            if r.port != nil {
+                let hostNet = r.compose.contains("network_mode: host")
+                XCTAssertTrue(hostNet ? r.compose.contains("{{ADDR}}") && r.compose.contains("{{PORT}}") : r.compose.contains("\"{{BIND}}{{PORT}}:"),
+                              "\(r.id) publishes its port through BIND (on the host network: listens on ADDR)")
+            }
             // Every secret is used, and every placeholder in the info lines is known.
             for s in r.secrets {
                 XCTAssertTrue(r.compose.contains("${\(s)}") || r.files.values.contains { $0.contains("{{\(s)}}") }
@@ -58,9 +65,43 @@ final class AppsTests: XCTestCase {
                 for n in names { XCTAssertTrue(r.secrets.contains(n) || ["ADDRESS", "URL"].contains(n), "\(r.id): {{\(n)}}") }
             }
             if !r.ownLogin { XCTAssertFalse(r.access.contains(.publicPort), "\(r.id) has no login: never on a public port") }
+            // Docker-published ports bypass ufw, so only a host-networked app can be limited to addresses.
+            if r.access.contains(.allowList) { XCTAssertTrue(r.compose.contains("network_mode: host"), "\(r.id): allowList needs the host network") }
+            for input in r.inputs ?? [] {
+                XCTAssertTrue(AppScript.isValidSecretName(input.name), "\(r.id): \(input.name)")
+                XCTAssertFalse(["BIND", "ADDR", "PORT", "URL", "HTTPS", "DOMAIN", "SERVER", "TZ"].contains(input.name) || r.secrets.contains(input.name),
+                               "\(r.id): \(input.name) shadows another value")
+                XCTAssertTrue(r.compose.contains("{{\(input.name)}}") || r.files.values.contains { $0.contains("{{\(input.name)}}") },
+                              "\(r.id): \(input.name) unused")
+                XCTAssertNoThrow(try input.validate(""), "\(r.id): the default of \(input.name) is valid")
+            }
             for path in r.files.keys { XCTAssertTrue(AppScript.isValidFilePath(path), path) }
         }
         XCTAssertNotNil(try? JSONSerialization.jsonObject(with: Data(AppCatalog.serverDashboard.utf8)), "dashboard is valid JSON")
+    }
+
+    func testAllowedAddressesAndInputs() throws {
+        XCTAssertEqual(try AppScript.allowedAddresses(["212.64.211.29, 198.51.100.0/24 212.64.211.29", ""]), ["212.64.211.29", "198.51.100.0/24"])
+        XCTAssertThrowsError(try AppScript.allowedAddresses([" "]), "at least one")
+        XCTAssertThrowsError(try AppScript.allowedAddresses(["0.0.0.0/0"]), "everyone is not an allow list")
+        XCTAssertThrowsError(try AppScript.allowedAddresses(["::/0"]))
+        XCTAssertThrowsError(try AppScript.allowedAddresses(["1.2.3.4; rm -rf /"]))
+        let script = AppScript.allowFrom("node-exporter", port: 9100, addresses: ["212.64.211.29"])
+        XCTAssertTrue(script.contains("ufw allow from '212.64.211.29' to any port 9100 proto tcp comment \"sigil-app:$APP\""), script)
+        XCTAssertTrue(script.contains("RESULT noufw"), "never opens a port without an active firewall")
+
+        let tag = AppInput(name: "VERSION", label: "Sürüm", defaultValue: "latest", kind: .imageTag)
+        XCTAssertEqual(try tag.validate("  "), "latest")
+        XCTAssertEqual(try tag.validate(" v1.9.0 "), "v1.9.0")
+        for bad in ["v1 ; reboot", "../x", "-x", "a:b", "$(id)"] { XCTAssertThrowsError(try tag.validate(bad), bad) }
+    }
+
+    func testOldRecipesWithoutInputsStillLoad() throws {
+        let r = try AppRecipe.custom(name: "Eski", compose: "services:\n  web:\n    image: nginx\n", port: nil, http: true, ownLogin: true, secrets: "")
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(r)) as! [String: Any]
+        json["inputs"] = nil
+        let back = try JSONDecoder().decode(AppRecipe.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(back.inputs)
     }
 
     func testFillKeepsForeignPlaceholders() {
@@ -167,6 +208,56 @@ final class AppsTests: XCTestCase {
         XCTAssertEqual(AppScript.result("pulling…\nRESULT rc=0\n"), "rc=0")
         XCTAssertEqual(AppScript.result("RESULT removed /opt/sigil/apps/.removed/dozzle-1"), "removed /opt/sigil/apps/.removed/dozzle-1")
         XCTAssertEqual(AppScript.result("nothing"), "")
+    }
+
+    /// Node Exporter behind ufw in the Docker test server (its ufw is on): `SIGIL_DOCKER=1 swift test --filter AppsTests`.
+    func testAllowListInstallInTheDockerTestServer() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["SIGIL_DOCKER"] == "1", "opt-in")
+        func exec(_ script: String, timeout: TimeInterval = 600) async throws -> String {
+            let r = try await Shell.run("/usr/local/bin/docker", ["exec", "-i", "sigil-test-server", "sh", "-s"], stdin: script, timeout: timeout)
+            return r.stdout + r.stderr
+        }
+        let id = "node-exporter", from = "203.0.113.7"
+        let recipe = AppCatalog.builtIn.first { $0.id == id }!
+        var state = AppScript.parse(probe: try await exec(AppScript.probe))
+        try XCTSkipUnless(state.dockerReady && state.ufwActive, "needs Docker and an active ufw")
+        if state.apps.contains(where: { $0.id == id }) { _ = try await exec(AppScript.remove(id)) }
+        let port = state.freePort(near: recipe.port!)
+        var p = plan(recipe, .allowList)
+        p.port = port
+        p.vars["PORT"] = String(port)
+        p.vars["VERSION"] = "v1.9.0"
+
+        let r1 = try await exec(AppScript.allowFrom(id, port: port, addresses: [from]))
+        XCTAssertEqual(AppScript.result(r1), "allowed")
+        let rules = try await exec("ufw status")
+        XCTAssertTrue(rules.contains("\(port)/tcp") && rules.contains(from) && rules.contains("sigil-app:\(id)"), rules)
+        let r2 = try await exec(AppScript.write(p))
+        XCTAssertEqual(AppScript.result(r2), "written")
+        let pulled = try await exec(AppScript.pull(id), timeout: 900)
+        XCTAssertEqual(AppScript.result(pulled), "rc=0", pulled)
+        let r3 = try await exec(AppScript.up(id))
+        XCTAssertEqual(AppScript.result(r3), "rc=0")
+        let waited = try await exec(AppScript.wait(id, port: port, http: recipe.http))
+        XCTAssertEqual(AppScript.result(waited), "ready", waited)
+        let m = AppManifest(id: id, name: recipe.name, symbol: recipe.symbol, port: port, access: .allowList, domain: nil, http: recipe.http,
+                            dir: "", custom: false, allowFrom: [from])
+        let r4 = try await exec(AppScript.finish(m))
+        XCTAssertEqual(AppScript.result(r4), "finished")
+
+        let metrics = try await exec("sleep 2; curl -s http://127.0.0.1:\(port)/metrics | grep -E '^node_exporter_build_info|^node_network_receive_bytes_total'")
+        XCTAssertTrue(metrics.contains("version=\"1.9.0\""), "the version input picks the image: \(metrics)")
+        XCTAssertTrue(metrics.contains("node_network_receive_bytes_total"), metrics)
+        let listening = try await exec("ss -Htln | awk '{print $4}'")
+        XCTAssertTrue(listening.contains("*:\(port)") || listening.contains("0.0.0.0:\(port)") || listening.contains("[::]:\(port)"),
+                      "listens outside, ufw decides: \(listening)")
+        state = AppScript.parse(probe: try await exec(AppScript.probe))
+        XCTAssertEqual(state.apps.first { $0.id == id }?.manifest.allowFrom, [from])
+
+        let r5 = try await exec(AppScript.remove(id))
+        XCTAssertTrue(AppScript.result(r5).hasPrefix("removed"))
+        let after = try await exec("ufw status")
+        XCTAssertFalse(after.contains("sigil-app:\(id)"), "removing the app deletes its rules: \(after)")
     }
 
     /// Real installs inside the Docker test server (scripts/test-server, Docker in Docker):

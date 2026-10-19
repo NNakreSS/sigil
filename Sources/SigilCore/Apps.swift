@@ -26,6 +26,9 @@ public enum AppAccess: String, Codable, Sendable, CaseIterable, Identifiable {
     case domain
     /// Published on the server's public address.
     case publicPort
+    /// Listens on the server's address; ufw lets in only the listed addresses. Only for host-networked recipes:
+    /// a port Docker publishes bypasses ufw.
+    case allowList
 
     public var id: String { rawValue }
     public var title: String {
@@ -33,14 +36,56 @@ public enum AppAccess: String, Codable, Sendable, CaseIterable, Identifiable {
         case .tunnel: return "Yalnızca tünelle"
         case .domain: return "Alan adı + HTTPS"
         case .publicPort: return "Herkese açık port"
+        case .allowList: return "Belirli adreslere açık"
         }
+    }
+
+    /// Listens on every address rather than 127.0.0.1.
+    public var listensOutside: Bool { self == .publicPort || self == .allowList }
+}
+
+/// A value the user types before the install, filled into the recipe as `{{NAME}}`.
+public struct AppInput: Codable, Hashable, Identifiable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        /// A Docker image tag such as `latest` or `v1.9.0`.
+        case imageTag
+    }
+
+    public var name: String
+    public var label: String
+    public var defaultValue: String
+    public var kind: Kind
+    public var help: String?
+    public var id: String { name }
+
+    public init(name: String, label: String, defaultValue: String, kind: Kind, help: String? = nil) {
+        self.name = name
+        self.label = label
+        self.defaultValue = defaultValue
+        self.kind = kind
+        self.help = help
+    }
+
+    /// The trimmed value (the default when empty), or an error that names the field.
+    public func validate(_ raw: String) throws -> String {
+        let v = raw.trimmingCharacters(in: .whitespaces)
+        let value = v.isEmpty ? defaultValue : v
+        switch kind {
+        case .imageTag:
+            guard Validation.matches(value, #"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$"#) else {
+                throw DeckError.invalid("\(label): “\(value)” geçerli bir imaj etiketi değil (ör. latest, v1.9.0).")
+            }
+        }
+        return value
     }
 }
 
 /// One installable thing: a docker compose project plus what Sigil needs to know to set it up and show how to reach it.
 ///
 /// Placeholders Sigil fills before writing the files: `{{BIND}}` (`127.0.0.1:` unless public), `{{PORT}}` (host port),
-/// `{{URL}}` (address you open), `{{HTTPS}}` (`true`/`false`), `{{DOMAIN}}`, `{{SERVER}}` (alias), `{{TZ}}`.
+/// `{{ADDR}}` (listen address for a host-networked service: `127.0.0.1`, empty when it listens outside),
+/// `{{URL}}` (address you open), `{{HTTPS}}` (`true`/`false`), `{{DOMAIN}}`, `{{SERVER}}` (alias), `{{TZ}}`,
+/// and each of the recipe's `inputs` by name.
 /// Generated secrets go into `.env` and are referenced as `${NAME}` in the compose file.
 public struct AppRecipe: Codable, Hashable, Identifiable, Sendable {
     public var id: String
@@ -61,6 +106,8 @@ public struct AppRecipe: Codable, Hashable, Identifiable, Sendable {
     /// The first visitor creates the admin account: open it right away when it is reachable from outside.
     public var firstVisitSetup: Bool
     public var access: [AppAccess]
+    /// Values asked in the install screen (nil in recipes saved before inputs existed).
+    public var inputs: [AppInput]?
     /// Environment variables Sigil generates (random, 24 characters) and writes to `.env`.
     public var secrets: [String]
     /// Connection lines shown after the install; `{{NAME}}` is a secret, `{{ADDRESS}}` host:port from this Mac.
@@ -73,8 +120,8 @@ public struct AppRecipe: Codable, Hashable, Identifiable, Sendable {
 
     public init(id: String, name: String, category: AppCategory, summary: String, symbol: String, website: String? = nil,
                 compose: String, files: [String: String] = [:], port: Int?, http: Bool = true, ownLogin: Bool,
-                firstVisitSetup: Bool = false, access: [AppAccess]? = nil, secrets: [String] = [], info: [String] = [],
-                notes: String? = nil, postInstall: String? = nil, minMemoryMB: Int = 256, isCustom: Bool = false) {
+                firstVisitSetup: Bool = false, access: [AppAccess]? = nil, inputs: [AppInput] = [], secrets: [String] = [],
+                info: [String] = [], notes: String? = nil, postInstall: String? = nil, minMemoryMB: Int = 256, isCustom: Bool = false) {
         self.id = id
         self.name = name
         self.category = category
@@ -88,6 +135,7 @@ public struct AppRecipe: Codable, Hashable, Identifiable, Sendable {
         self.ownLogin = ownLogin
         self.firstVisitSetup = firstVisitSetup
         self.access = access ?? AppRecipe.defaultAccess(port: port, http: http, ownLogin: ownLogin)
+        self.inputs = inputs.isEmpty ? nil : inputs
         self.secrets = secrets
         self.info = info
         self.notes = notes
@@ -147,9 +195,11 @@ public struct AppManifest: Codable, Hashable, Identifiable, Sendable {
     public var installedAt: Date
     public var dir: String
     public var custom: Bool
+    /// The addresses ufw lets in, for `.allowList`.
+    public var allowFrom: [String]?
 
     public init(id: String, name: String, symbol: String, port: Int?, access: AppAccess, domain: String?, http: Bool,
-                installedAt: Date = Date(), dir: String, custom: Bool) {
+                installedAt: Date = Date(), dir: String, custom: Bool, allowFrom: [String]? = nil) {
         self.id = id
         self.name = name
         self.symbol = symbol
@@ -160,6 +210,7 @@ public struct AppManifest: Codable, Hashable, Identifiable, Sendable {
         self.installedAt = installedAt
         self.dir = dir
         self.custom = custom
+        self.allowFrom = allowFrom
     }
 }
 
@@ -300,6 +351,19 @@ public enum AppScript {
 
     static func isValidID(_ s: String) -> Bool { Validation.matches(s, #"^[a-z0-9][a-z0-9-]{0,47}$"#) }
     static func isValidSecretName(_ s: String) -> Bool { Validation.matches(s, #"^[A-Z][A-Z0-9_]{0,63}$"#) }
+
+    /// Addresses for `.allowList`, typed comma/space separated: each checked, canonical, no duplicates, at least one.
+    public static func allowedAddresses(_ raw: [String]) throws -> [String] {
+        var out: [String] = []
+        for part in raw.flatMap({ $0.split(whereSeparator: { $0 == "," || $0 == " " || $0.isNewline }) }) {
+            let a = try AllowList.validate(String(part))
+            guard AllowList.parse(a)?.prefix != 0 else { throw DeckError.invalid("“\(a)” herkesi kapsar; belirli bir adres ya da ağ yaz.") }
+            if !out.contains(a) { out.append(a) }
+        }
+        guard !out.isEmpty else { throw DeckError.invalid("Erişebilecek en az bir IP adresi yaz.") }
+        guard out.count <= 20 else { throw DeckError.invalid("En fazla 20 adres yazılabilir.") }
+        return out
+    }
     static func isValidFilePath(_ s: String) -> Bool {
         Validation.matches(s, #"^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$"#) && !s.contains("..")
     }
@@ -359,7 +423,9 @@ public enum AppScript {
     if [ "$(id -u)" -eq 0 ]; then ADMIN=1; elif sudo -n true 2>/dev/null; then S="sudo -n"; ADMIN=1; fi
     if [ "$ADMIN" = 1 ]; then BASE=/opt/sigil/apps; else BASE="$HOME/sigil-apps"; fi
     D=""
-    if docker info >/dev/null 2>&1; then D=docker; elif [ -n "$S" ] && $S docker info >/dev/null 2>&1; then D="$S docker"; fi
+    # A non-root admin keeps the apps in /opt/sigil/apps as root (.env is 0600), so compose must read them as root too,
+    # even when the user is in the docker group.
+    if [ -n "$S" ] && $S docker info >/dev/null 2>&1; then D="$S docker"; elif docker info >/dev/null 2>&1; then D=docker; fi
     [ -n "$D" ] || { echo "RESULT nodocker"; exit 0; }
     if $D compose version >/dev/null 2>&1; then C="$D compose"
     elif command -v docker-compose >/dev/null 2>&1; then C="${D%docker}docker-compose"
@@ -610,6 +676,21 @@ public enum AppScript {
         """
     }
 
+    /// Lets only `addresses` reach `port` through an active ufw; run before the app starts listening. Removing the
+    /// app deletes the rules by their comment.
+    static func allowFrom(_ id: String, port: Int, addresses: [String]) -> String {
+        let rules = addresses.map {
+            "$S ufw allow from \(q($0)) to any port \(port) proto tcp comment \"sigil-app:$APP\" >/dev/null || { echo \"RESULT ufwfail\"; exit 0; }"
+        }
+        return header + appVars(id) + """
+        [ "$ADMIN" = 1 ] || { echo "RESULT noroot"; exit 0; }
+        command -v ufw >/dev/null 2>&1 && $S ufw status 2>/dev/null | grep -qi 'Status: active' || { echo "RESULT noufw"; exit 0; }
+        \(rules.joined(separator: "\n"))
+        echo "RESULT allowed"
+
+        """
+    }
+
     static func manifestJSON(_ m: AppManifest, dir: String) -> String {
         var m = m
         m.dir = "__DIR__"
@@ -727,6 +808,9 @@ public enum AppScript {
         case "downfail": return .ssh("Uygulama durdurulamadı:\n" + details(out))
         case "noadmin": return .invalid("Docker kurmak için root ya da şifresiz sudo gerekiyor.")
         case "nodownloader": return .invalid("Sunucuda curl ya da wget yok.")
+        case "noroot": return .invalid("Güvenlik duvarı kuralı için root ya da şifresiz sudo gerekiyor.")
+        case "noufw": return .invalid("Güvenlik duvarı (ufw) açık değil; port herkese açık kalırdı. Önce sunucu ekranındaki SSH izin listesi kartından güvenlik duvarını aç.")
+        case "ufwfail": return .ssh("Güvenlik duvarı kuralı eklenemedi:\n" + details(out))
         default: return .ssh(details(out).isEmpty ? "Sunucu beklenen yanıtı vermedi." : details(out))
         }
     }
@@ -784,6 +868,7 @@ extension DeckModel {
 
     /// Installs `recipe` with the given access. Generated passwords go to the server's `.env` and this Mac's Keychain.
     public func installApp(_ id: UUID, _ recipe: AppRecipe, access: AppAccess, port: Int?, domain: String? = nil,
+                           inputs: [String: String] = [:], allowFrom: [String] = [],
                            progress: @MainActor (String) -> Void = { _ in }) async throws -> AppInstallReport {
         guard let s = server(id) else { throw DeckError.notFound }
         guard recipe.access.contains(access) else { throw DeckError.invalid("Bu uygulama bu erişim şekliyle kurulamaz.") }
@@ -792,6 +877,9 @@ extension DeckModel {
         if let port, !(1...65535).contains(port) { throw DeckError.invalid("Port 1–65535 arasında olmalı.") }
         let domain = access == .domain ? try AppScript.validateDomain(domain ?? "") : nil
         guard access != .domain || (port != nil && recipe.http) else { throw DeckError.invalid("Alan adıyla yalnızca web uygulamaları yayınlanır.") }
+        let inputValues = try (recipe.inputs ?? []).map { ($0.name, try $0.validate(inputs[$0.name] ?? "")) }
+        let allowed = access == .allowList ? try AppScript.allowedAddresses(allowFrom) : []
+        guard access != .allowList || port != nil else { throw DeckError.invalid("Bu uygulamanın açılacak bir portu yok.") }
 
         return try await withBusy(id, "\(recipe.name) kuruluyor") {
             var secrets: [String: String] = [:]
@@ -805,13 +893,15 @@ extension DeckModel {
             switch access {
             case .tunnel: url = "http://localhost:\(tunnel?.localPort ?? port ?? 0)"
             case .domain: url = "https://\(domain!)"
-            case .publicPort: url = "http://\(s.host.contains(":") ? "[\(s.host)]" : s.host):\(port ?? 0)"
+            case .publicPort, .allowList: url = "http://\(s.host.contains(":") ? "[\(s.host)]" : s.host):\(port ?? 0)"
             }
-            let vars = [
-                "BIND": access == .publicPort ? "" : "127.0.0.1:", "PORT": port.map(String.init) ?? "",
+            var vars = [
+                "BIND": access.listensOutside ? "" : "127.0.0.1:", "ADDR": access.listensOutside ? "" : "127.0.0.1",
+                "PORT": port.map(String.init) ?? "",
                 "URL": url, "HTTPS": access == .domain ? "true" : "false", "DOMAIN": domain ?? "",
                 "SERVER": s.alias, "TZ": TimeZone.current.identifier,
             ]
+            for (name, value) in inputValues where vars[name] == nil { vars[name] = value }
             let plan = AppScript.Plan(recipe: recipe, access: access, port: port, domain: domain, secrets: secrets, vars: vars)
             func step(_ script: String, timeout: TimeInterval = 180, expect: String) async throws -> String {
                 let out = try await appScript(id, script, timeout: timeout)
@@ -820,6 +910,11 @@ extension DeckModel {
                 return out
             }
 
+            if access == .allowList, let port {
+                // Before anything listens: without an active ufw the port would be open to everyone.
+                progress("Güvenlik duvarı yalnızca \(allowed.joined(separator: ", ")) için açılıyor")
+                _ = try await step(AppScript.allowFrom(recipe.id, port: port, addresses: allowed), expect: "allowed")
+            }
             progress("Dosyalar hazırlanıyor")
             _ = try await step(AppScript.write(plan), expect: "written")
             if !secrets.isEmpty { appSecrets.save(secrets, account: Self.appAccount(id, recipe.id)) }
@@ -846,7 +941,8 @@ extension DeckModel {
                 _ = try await step(AppScript.openPort(recipe.id, port: port), expect: "opened")
             }
             let manifest = AppManifest(id: recipe.id, name: recipe.name, symbol: recipe.symbol, port: port, access: access,
-                                       domain: domain, http: recipe.http, dir: "", custom: recipe.isCustom)
+                                       domain: domain, http: recipe.http, dir: "", custom: recipe.isCustom,
+                                       allowFrom: allowed.isEmpty ? nil : allowed)
             _ = try await step(AppScript.finish(manifest), expect: "finished")
             if let tunnel {
                 update(id) {
@@ -925,7 +1021,7 @@ extension DeckModel {
         switch m.access {
         case .tunnel: address = m.port.map { _ in "localhost:\(appTunnel(id, app)?.localPort ?? m.port!)" }
         case .domain: address = m.domain
-        case .publicPort: address = m.port.map { "\(host):\($0)" }
+        case .publicPort, .allowList: address = m.port.map { "\(host):\($0)" }
         }
         var url: String?
         if m.http, let address { url = m.access == .domain ? "https://\(address)" : "http://\(address)" }
