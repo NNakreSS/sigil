@@ -25,13 +25,27 @@ public struct ServerStore: Sendable {
         guard fm.fileExists(atPath: paths.storeFile.path) else { return ([], nil) }
         do {
             let data = try Data(contentsOf: paths.storeFile)
-            return (try decoder.decode([Server].self, from: data), nil)
+            do { return (try decoder.decode([Server].self, from: data), nil) } catch {
+                // What the servers report (installed apps, health) may hold a value only a newer Sigil knows, e.g. a
+                // new access mode. It is read again from the server, so drop it rather than the whole list.
+                guard let trimmed = Self.withoutServerCaches(data),
+                      let servers = try? decoder.decode([Server].self, from: trimmed) else { throw error }
+                return (servers, nil)
+            }
         } catch {
             let aside = paths.storeFile.deletingLastPathComponent()
                 .appendingPathComponent("servers.json.corrupt-\(ConfigManager.stamp())")
             try? fm.moveItem(at: paths.storeFile, to: aside)
             return ([], "Sunucu listesi okunamadı; bozuk dosya \(aside.lastPathComponent) olarak ayrıldı.")
         }
+    }
+
+    static let serverCacheKeys = ["apps", "health"]
+
+    static func withoutServerCaches(_ data: Data) -> Data? {
+        guard var list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return nil }
+        for i in list.indices { for key in serverCacheKeys { list[i][key] = nil } }
+        return try? JSONSerialization.data(withJSONObject: list)
     }
 
     public func save(_ servers: [Server]) throws {

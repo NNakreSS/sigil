@@ -122,6 +122,26 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(files.contains { $0.hasPrefix("servers.json.corrupt-") })
     }
 
+    /// A newer Sigil may cache an app with an access mode this one doesn't know: the list must survive it.
+    func testUnknownCachedAppDoesNotLoseTheList() throws {
+        let box = try Sandbox()
+        var s = Server(alias: "web", host: "203.0.113.7", port: 22, user: "u", keyFileName: "k", publicKeyBlob: "B", keyFingerprint: "F")
+        s.apps = [InstalledApp(manifest: AppManifest(id: "x", name: "X", symbol: "x", port: 1, access: .tunnel, domain: nil, http: true,
+                                                     dir: "/opt/sigil/apps/x", custom: false), running: 1, total: 1)]
+        let other = Server(alias: "db", host: "203.0.113.8", port: 22, user: "u", keyFileName: "k2", publicKeyBlob: "B2", keyFingerprint: "F2")
+        let store = ServerStore(paths: box.paths)
+        try store.save([s, other])
+        let text = try String(contentsOf: box.paths.storeFile, encoding: .utf8).replacingOccurrences(of: "\"tunnel\"", with: "\"fromTheFuture\"")
+        try text.write(to: box.paths.storeFile, atomically: true, encoding: .utf8)
+
+        let loaded = store.load()
+        XCTAssertEqual(loaded.servers.map(\.alias), ["web", "db"])
+        XCTAssertNil(loaded.servers[0].apps, "only the cache read from the server is dropped")
+        XCTAssertNil(loaded.warning)
+        let files = try FileManager.default.contentsOfDirectory(atPath: box.paths.supportDir.path)
+        XCTAssertFalse(files.contains { $0.hasPrefix("servers.json.corrupt-") })
+    }
+
     func testRotationDueLogic() {
         var s = Server(alias: "a", host: "h", port: 22, user: "u", keyFileName: "k", publicKeyBlob: "B", keyFingerprint: "F",
                        lastRotatedAt: Date(timeIntervalSinceNow: -40 * 86400), rotationIntervalDays: 30)
