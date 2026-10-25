@@ -174,6 +174,86 @@ final class AppsTests: XCTestCase {
         XCTAssertEqual(try AppRecipe.custom(name: "Şık İş", compose: "services:", port: nil, http: true, ownLogin: true, secrets: "").id, "custom-sik-is")
     }
 
+    /// A Node Exporter that also registers itself with a monitoring service: the variables become inputs.
+    func testCustomRecipeVariablesBecomeInputs() async throws {
+        let compose = """
+        services:
+          node-exporter:
+            image: prom/node-exporter:{{VERSION}}
+            container_name: sigil-node-exporter-own
+            network_mode: host
+            command: ["--web.listen-address={{ADDR}}:{{PORT}}"]
+            environment:
+              TOKEN: ${API_TOKEN}
+              LEGEND: "{{mountpoint}} {{.State}}"
+        """
+        let post = """
+        RESP=$(curl -sS -m 30 -w '\\n%{http_code}' -X POST "http://{{MONITOR_IP}}:{{REGISTER_PORT}}/register" \\
+          --data-urlencode "name={{NODE_NAME}}" -d "port={{PORT}}" -H "X-Token: $API_TOKEN" || printf '\\n000')
+        echo "$RESP"
+        """
+        let kept = AppInput(name: "VERSION", label: "Sürüm", defaultValue: "v1.9.0", kind: .imageTag)
+        let r = try AppRecipe.custom(name: "Node Exporter + kayıt", compose: compose, port: 9100, http: false, ownLogin: false,
+                                     secrets: "API_TOKEN", postInstall: post, inputs: [kept])
+        XCTAssertEqual(r.inputs?.map(\.name), ["VERSION", "MONITOR_IP", "REGISTER_PORT", "NODE_NAME"],
+                       "Sigil's own values, secrets and foreign {{…}} are not asked")
+        XCTAssertEqual(r.inputs?.first, kept, "what the user set is kept")
+        XCTAssertEqual(r.inputs?.map(\.kind), [.imageTag, .address, .port, .name])
+        XCTAssertEqual(r.inputs?[1].label, "Monitor IP")
+        XCTAssertEqual(r.access, [.tunnel, .publicPort, .allowList], "host network: can be limited to addresses")
+        XCTAssertNotNil(r.postInstall)
+
+        var p = plan(r, .allowList)
+        p.vars["MONITOR_IP"] = "212.64.211.29"; p.vars["REGISTER_PORT"] = "9099"; p.vars["NODE_NAME"] = "web-01"
+        let script = try XCTUnwrap(AppScript.postInstall(p))
+        try await syntax(script)
+        XCTAssertTrue(script.contains(#""http://212.64.211.29:9099/register""#), script)
+        XCTAssertTrue(script.contains("name=web-01"), script)
+        XCTAssertTrue(script.contains("API_TOKEN='"), "secrets are shell variables")
+
+        let out = try await Shell.run("/bin/sh", ["-s"], stdin: AppScript.postInstall(
+            AppScript.Plan(recipe: try AppRecipe.custom(name: "x", compose: "services:", port: nil, http: false, ownLogin: true, secrets: "",
+                                                        postInstall: "echo merhaba {{WHO}}; exit 3"),
+                           access: .tunnel, port: nil, domain: nil, secrets: [:], vars: ["WHO": "dunya"]))!
+            .replacingOccurrences(of: AppScript.header, with: "")
+            .replacingOccurrences(of: #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"#, with: "")
+        )
+        XCTAssertEqual(AppScript.result(out.stdout), "done rc=3", out.stdout)
+        XCTAssertEqual(AppScript.details(out.stdout), "merhaba dunya")
+
+        XCTAssertThrowsError(try AppRecipe.custom(name: "x", compose: "services:", port: nil, http: true, ownLogin: true, secrets: "",
+                                                  postInstall: "{{HOST_IP}}",
+                                                  inputs: [AppInput(name: "HOST_IP", label: "IP", defaultValue: "1.2.3.4; reboot", kind: .address)]),
+                             "a default must be valid")
+        XCTAssertEqual(try AppRecipe.custom(name: "x", compose: "services:\n  a:\n    ports: [\"{{BIND}}{{PORT}}:80\"]", port: 80, http: true,
+                                            ownLogin: true, secrets: "").inputs, nil, "nothing to ask")
+    }
+
+    func testInputKinds() throws {
+        func input(_ kind: AppInput.Kind, _ d: String = "") -> AppInput { AppInput(name: "X", label: "X", defaultValue: d, kind: kind) }
+        XCTAssertThrowsError(try input(.text).validate(" "), "required when there is no default")
+        XCTAssertEqual(try input(.text).validate("Ana sunucu, İstanbul"), "Ana sunucu, İstanbul")
+        XCTAssertEqual(try input(.address).validate("212.64.211.29"), "212.64.211.29")
+        XCTAssertEqual(try input(.address).validate("2001:db8::1"), "2001:db8::1")
+        XCTAssertEqual(try input(.port, "9099").validate(""), "9099")
+        XCTAssertEqual(try input(.name).validate("Web-01"), "web-01")
+        for (kind, bad) in [(AppInput.Kind.text, "a\"b"), (.text, "$(id)"), (.text, "a;b"), (.text, "`x`"), (.text, "a\\b"), (.text, "it's"),
+                            (.address, "1.2.3.4 x"), (.address, "-x"), (.port, "0"), (.port, "70000"), (.port, "80a"),
+                            (.name, "web_01"), (.name, "-web")] {
+            XCTAssertThrowsError(try input(kind).validate(bad), "\(kind): \(bad)")
+        }
+        XCTAssertEqual(AppInput.Kind.guess("MONITOR_IP"), .address)
+        XCTAssertEqual(AppInput.Kind.guess("DB_HOST"), .address)
+        XCTAssertEqual(AppInput.Kind.guess("API_PORT"), .port)
+        XCTAssertEqual(AppInput.Kind.guess("IMAGE_TAG"), .imageTag)
+        XCTAssertEqual(AppInput.Kind.guess("NODE_NAME"), .name)
+        XCTAssertEqual(AppInput.Kind.guess("GREETING"), .text)
+
+        // A kind added by a newer Sigil still loads (as text).
+        let json = #"{"name":"X","label":"X","defaultValue":"","kind":"fromTheFuture"}"#
+        XCTAssertEqual(try JSONDecoder().decode(AppInput.self, from: Data(json.utf8)).kind, .text)
+    }
+
     @MainActor
     func testCustomRecipesPersist() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

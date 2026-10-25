@@ -460,6 +460,7 @@ private struct RecipePane: View {
     @State private var domain = ""
     @State private var steps: [String] = []
     @State private var warnings: [String] = []
+    @State private var output: String?
     @State private var dns: DNSMatch?
     @State private var publicOK = false
     @State private var inputValues: [String: String] = [:]
@@ -745,6 +746,14 @@ private struct RecipePane: View {
                 Label(w, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.amberInk)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
+            if let output {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Kurulum sonrası komutun çıktısı").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(output).font(.terminalSmall).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.vellum, in: RoundedRectangle(cornerRadius: 6))
+                }
+            }
             if let app = installedApp {
                 Text("Bağlantı bilgileri").font(.engraved(15))
                 AppConnectionView(connection: model.appConnection(server.id, app), openURL: app.manifest.http ? { await open(app) } : nil)
@@ -781,6 +790,7 @@ private struct RecipePane: View {
     private func install() async {
         steps = []
         warnings = []
+        output = nil
         phase = .working
         installing = true
         defer { installing = false }
@@ -795,6 +805,7 @@ private struct RecipePane: View {
                 withAnimation(Motion.gentle) { steps.append(s) }
             }
             warnings = report.warnings
+            output = report.output
             if let fresh = try? await model.appHost(server.id) { host = fresh }
             Haptics.success()
             phase = .done
@@ -843,11 +854,14 @@ struct RecipeEditor: View {
 
     @State private var name: String
     @State private var compose: String
+    @State private var postInstall: String
     @State private var hasPort: Bool
     @State private var port: Int
     @State private var http: Bool
     @State private var ownLogin: Bool
     @State private var secrets: String
+    /// What the user set for each variable, kept by name even while it is missing from the text.
+    @State private var edited: [String: AppInput]
     @State private var error: String?
 
     init(recipe: AppRecipe?, saved: @escaping (String) -> Void) {
@@ -855,11 +869,13 @@ struct RecipeEditor: View {
         self.saved = saved
         _name = State(initialValue: recipe?.name ?? "")
         _compose = State(initialValue: recipe?.compose ?? Self.sample)
+        _postInstall = State(initialValue: recipe?.postInstall ?? "")
         _hasPort = State(initialValue: recipe.map { $0.port != nil } ?? true)
         _port = State(initialValue: recipe?.port ?? 8080)
         _http = State(initialValue: recipe?.http ?? true)
         _ownLogin = State(initialValue: recipe?.ownLogin ?? true)
         _secrets = State(initialValue: recipe?.secrets.joined(separator: ", ") ?? "APP_PASSWORD")
+        _edited = State(initialValue: Dictionary((recipe?.inputs ?? []).map { ($0.name, $0) }) { a, _ in a })
     }
 
     static let sample = """
@@ -874,43 +890,60 @@ struct RecipeEditor: View {
           PASSWORD: ${APP_PASSWORD}
     """
 
+    private var secretNames: [String] {
+        secrets.split(whereSeparator: { $0 == "," || $0 == " " || $0.isNewline }).map(String.init)
+    }
+
+    /// The `{{NAME}}` variables in the compose file and the command, asked in the install screen.
+    private var variables: [AppInput] {
+        AppInput.detect(in: [compose, postInstall], secrets: secretNames, keeping: Array(edited.values))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(existing == nil ? "Yeni tarif" : existing!.name).font(.engraved(20, weight: .bold))
-            TextField("Ad", text: $name, prompt: Text("Benim uygulamam")).textFieldStyle(.roundedBorder)
-            Text("docker-compose.yml").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            TextEditor(text: $compose)
-                .font(.terminalSmall)
-                .frame(minHeight: 220)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(Color.vellum, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.hairline))
-            Text("Sigil şunları doldurur: {{BIND}}{{PORT}} (tünel ve alan adı modunda 127.0.0.1:port), {{URL}} (açılacak adres), {{HTTPS}}, {{DOMAIN}}, {{TZ}}. Aşağıdaki şifreler rastgele üretilip .env’ye yazılır; compose’da ${AD} diye kullan.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 8) {
-                GridRow {
-                    Toggle("Bağlanılacak bir portu var", isOn: $hasPort).gridCellColumns(2)
-                }
-                if hasPort {
-                    GridRow {
-                        Text("Varsayılan port").foregroundStyle(.secondary)
-                        TextField("", value: $port, format: .number.grouping(.never)).textFieldStyle(.roundedBorder).frame(width: 90)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("Ad", text: $name, prompt: Text("Benim uygulamam")).textFieldStyle(.roundedBorder)
+                    Text("docker-compose.yml").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    code($compose, height: 200)
+                    Text("Sigil şunları doldurur: {{BIND}}{{PORT}} (tünel ve alan adı modunda 127.0.0.1:port), {{ADDR}} (network_mode: host’ta dinlenecek adres), {{URL}}, {{HTTPS}}, {{DOMAIN}}, {{SERVER}} (sunucunun adı), {{TZ}}. Başka bir {{AD}} yazarsan kurulumda sorulur. Aşağıdaki şifreler rastgele üretilip .env’ye yazılır; compose’da ${AD} diye kullan.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("Kurulumdan sonra çalışacak komut (isteğe bağlı)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    code($postInstall, height: 90)
+                    Text("Uygulama klasöründe sh ile çalışır (bash değil); şifreler $AD, Sigil’in değerleri ve değişkenler {{AD}} olarak kullanılır. Çıktısı kurulumdan sonra gösterilir.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 8) {
+                        GridRow {
+                            Toggle("Bağlanılacak bir portu var", isOn: $hasPort).gridCellColumns(2)
+                        }
+                        if hasPort {
+                            GridRow {
+                                Text("Varsayılan port").foregroundStyle(.secondary)
+                                TextField("", value: $port, format: .number.grouping(.never)).textFieldStyle(.roundedBorder).frame(width: 90)
+                            }
+                            GridRow {
+                                Toggle("Tarayıcıda açılır (web arayüzü)", isOn: $http).gridCellColumns(2)
+                            }
+                            GridRow {
+                                Toggle("Kendi giriş ekranı var", isOn: $ownLogin).gridCellColumns(2)
+                            }
+                        }
+                        GridRow {
+                            Text("Rastgele şifreler").foregroundStyle(.secondary)
+                            TextField("", text: $secrets, prompt: Text("DB_PASSWORD, API_KEY")).textFieldStyle(.roundedBorder).font(.terminalSmall)
+                        }
                     }
-                    GridRow {
-                        Toggle("Tarayıcıda açılır (web arayüzü)", isOn: $http).gridCellColumns(2)
+                    variableList
+                    if hasPort && !compose.contains("{{PORT}}") {
+                        Label("Compose dosyasında {{PORT}} yok; Sigil portu bağlayamaz.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.amberInk)
                     }
-                    GridRow {
-                        Toggle("Kendi giriş ekranı var", isOn: $ownLogin).gridCellColumns(2)
+                    if hasPort && compose.contains("network_mode: host") {
+                        Label("network_mode: host: “Belirli adreslere açık” da seçilebilir; {{ADDR}}:{{PORT}} üzerinde dinlemeli.", systemImage: "network.badge.shield.half.filled")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                GridRow {
-                    Text("Rastgele şifreler").foregroundStyle(.secondary)
-                    TextField("", text: $secrets, prompt: Text("DB_PASSWORD, API_KEY")).textFieldStyle(.roundedBorder).font(.terminalSmall)
-                }
-            }
-            if hasPort && !compose.contains("{{PORT}}") {
-                Label("Compose dosyasında {{PORT}} yok; Sigil portu bağlayamaz.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.amberInk)
+                .padding(.trailing, 8)
             }
             if let error { Text(error).foregroundStyle(Color.cinnabar).font(.callout) }
             HStack {
@@ -923,14 +956,68 @@ struct RecipeEditor: View {
             }
         }
         .padding(22)
-        .frame(width: 600)
+        .frame(width: 640, height: 720)
         .background(Color.parchment)
+    }
+
+    private func code(_ text: Binding<String>, height: CGFloat) -> some View {
+        TextEditor(text: text)
+            .font(.terminalSmall)
+            .frame(height: height)
+            .scrollContentBackground(.hidden)
+            .padding(6)
+            .background(Color.vellum, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.hairline))
+    }
+
+    @ViewBuilder private var variableList: some View {
+        let vars = variables
+        if !vars.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Kurulumda sorulacak değişkenler").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 8) {
+                    GridRow {
+                        Text("Değişken"); Text("Etiket"); Text("Tür"); Text("Varsayılan")
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                    ForEach(vars) { v in
+                        GridRow {
+                            Text(v.name).font(.terminalSmall).lineLimit(1)
+                            TextField("", text: field(v, \.label)).textFieldStyle(.roundedBorder).frame(width: 140)
+                            Picker("", selection: field(v, \.kind)) {
+                                ForEach(AppInput.Kind.allCases) { Text($0.title).tag($0) }
+                            }
+                            .labelsHidden().frame(width: 130)
+                            VStack(alignment: .leading, spacing: 2) {
+                                TextField("", text: field(v, \.defaultValue), prompt: Text("boş: kurulumda yazılır")).textFieldStyle(.roundedBorder)
+                                if !v.defaultValue.trimmingCharacters(in: .whitespaces).isEmpty, let e = problem(v) {
+                                    Text(e).font(.caption).foregroundStyle(Color.cinnabar).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Edits one property of a detected variable; the change is kept under its name.
+    private func field<T>(_ v: AppInput, _ key: WritableKeyPath<AppInput, T>) -> Binding<T> {
+        Binding(get: { (edited[v.name] ?? v)[keyPath: key] }, set: {
+            var i = edited[v.name] ?? v
+            i[keyPath: key] = $0
+            edited[v.name] = i
+        })
+    }
+
+    private func problem(_ v: AppInput) -> String? {
+        do { _ = try v.validate(""); return nil } catch { return error.localizedDescription }
     }
 
     private func save() {
         do {
             let r = try AppRecipe.custom(name: name, compose: compose, port: hasPort ? port : nil, http: http, ownLogin: ownLogin,
-                                         secrets: secrets, id: existing?.id)
+                                         secrets: secrets, postInstall: postInstall, inputs: variables, id: existing?.id)
             try model.saveRecipe(r)
             saved(r.id)
             dismiss()

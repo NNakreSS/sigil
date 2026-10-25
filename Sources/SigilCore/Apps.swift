@@ -46,9 +46,42 @@ public enum AppAccess: String, Codable, Sendable, CaseIterable, Identifiable {
 
 /// A value the user types before the install, filled into the recipe as `{{NAME}}`.
 public struct AppInput: Codable, Hashable, Identifiable, Sendable {
-    public enum Kind: String, Codable, Sendable {
+    public enum Kind: String, Codable, Sendable, CaseIterable, Identifiable {
         /// A Docker image tag such as `latest` or `v1.9.0`.
         case imageTag
+        /// Letters, digits, spaces and `._:/@+,=%-`: nothing a shell or YAML would read as code.
+        case text
+        /// An IP address or a host name.
+        case address
+        case port
+        /// A short lowercase name such as `web-01`.
+        case name
+
+        public var id: String { rawValue }
+        public var title: String {
+            switch self {
+            case .imageTag: return "İmaj etiketi"
+            case .text: return "Metin"
+            case .address: return "IP / alan adı"
+            case .port: return "Port"
+            case .name: return "Kısa ad"
+            }
+        }
+
+        /// A kind added by a newer Sigil is read as text, the strictest free-form one, so the recipe still loads.
+        public init(from decoder: Decoder) throws {
+            self = Kind(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .text
+        }
+
+        /// A guess from the variable's name: `MONITOR_IP` is an address, `API_PORT` a port.
+        static func guess(_ name: String) -> Kind {
+            let parts = name.split(separator: "_").map(String.init)
+            if parts.last == "PORT" { return .port }
+            if parts.contains(where: { ["IP", "HOST", "ADDRESS", "ADDR"].contains($0) }) { return .address }
+            if parts.contains(where: { ["VERSION", "TAG"].contains($0) }) { return .imageTag }
+            if parts.last == "NAME" { return .name }
+            return .text
+        }
     }
 
     public var name: String
@@ -66,17 +99,63 @@ public struct AppInput: Codable, Hashable, Identifiable, Sendable {
         self.help = help
     }
 
-    /// The trimmed value (the default when empty), or an error that names the field.
+    /// The trimmed value (the default when empty), or an error that names the field. Values are filled into the
+    /// compose file and the post-install shell as they are, so every kind keeps to characters that are only data.
     public func validate(_ raw: String) throws -> String {
         let v = raw.trimmingCharacters(in: .whitespaces)
-        let value = v.isEmpty ? defaultValue : v
+        var value = v.isEmpty ? defaultValue.trimmingCharacters(in: .whitespaces) : v
+        guard !value.isEmpty else { throw DeckError.invalid("\(label) boş bırakılamaz.") }
         switch kind {
         case .imageTag:
             guard Validation.matches(value, #"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$"#) else {
                 throw DeckError.invalid("\(label): “\(value)” geçerli bir imaj etiketi değil (ör. latest, v1.9.0).")
             }
+        case .text:
+            guard Validation.matches(value, #"^[\p{L}\p{N} ._:/@+,=%-]{1,200}$"#) else {
+                throw DeckError.invalid("\(label): yalnızca harf, rakam, boşluk ve . _ : / @ + , = % - kullanılabilir.")
+            }
+        case .address:
+            guard Validation.matches(value, #"^[A-Za-z0-9][A-Za-z0-9.:_-]{0,252}$"#) else {
+                throw DeckError.invalid("\(label): “\(value)” geçerli bir IP adresi ya da alan adı değil.")
+            }
+        case .port:
+            guard let p = Int(value), (1...65535).contains(p) else { throw DeckError.invalid("\(label): port 1–65535 arasında olmalı.") }
+            value = String(p)
+        case .name:
+            value = value.lowercased()
+            guard Validation.matches(value, #"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"#) else {
+                throw DeckError.invalid("\(label): küçük harf, rakam ve tire kullan (ör. web-01).")
+            }
         }
         return value
+    }
+
+    /// Values Sigil fills itself; a `{{NAME}}` of one of these is not asked.
+    static let builtInNames: Set<String> = ["BIND", "ADDR", "PORT", "URL", "HTTPS", "DOMAIN", "SERVER", "TZ", "ADDRESS",
+                                            AppScript.proxyPasswordName]
+
+    /// The `{{NAME}}` placeholders in `texts` that Sigil does not fill itself, in order of first use. A name in
+    /// `keeping` keeps its label, default and kind; a new one gets a kind guessed from its name.
+    public static func detect(in texts: [String], secrets: [String] = [], keeping: [AppInput] = []) -> [AppInput] {
+        var out: [AppInput] = []
+        let regex = try! NSRegularExpression(pattern: #"\{\{([A-Z][A-Z0-9_]{0,63})\}\}"#)
+        for text in texts {
+            for m in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let r = Range(m.range(at: 1), in: text) else { continue }
+                let name = String(text[r])
+                if builtInNames.contains(name) || secrets.contains(name) || out.contains(where: { $0.name == name }) { continue }
+                out.append(keeping.first { $0.name == name }
+                           ?? AppInput(name: name, label: label(for: name), defaultValue: "", kind: Kind.guess(name)))
+            }
+        }
+        return out
+    }
+
+    /// `MONITOR_IP` → `Monitor IP`.
+    static func label(for name: String) -> String {
+        name.split(separator: "_").map { part in
+            ["IP", "URL", "ID", "API", "DB"].contains(part) ? String(part) : String(part.prefix(1)) + part.dropFirst().lowercased()
+        }.joined(separator: " ")
     }
 }
 
@@ -157,9 +236,11 @@ public struct AppRecipe: Codable, Hashable, Identifiable, Sendable {
 
     public var isDockerEngine: Bool { id == AppCatalog.dockerID }
 
-    /// A user's own recipe, checked and normalised.
+    /// A user's own recipe, checked and normalised. Its inputs are the `{{NAME}}` placeholders found in the compose
+    /// file and the post-install shell; `inputs` gives the label, default and kind the user chose for them.
     public static func custom(name: String, compose: String, port: Int?, http: Bool, ownLogin: Bool,
-                              secrets: String, summary: String = "", id: String? = nil) throws -> AppRecipe {
+                              secrets: String, summary: String = "", postInstall: String = "", inputs: [AppInput] = [],
+                              id: String? = nil) throws -> AppRecipe {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty, n.count <= 40 else { throw DeckError.invalid("Tarife bir ad ver (en fazla 40 karakter).") }
         let slug = id ?? "custom-" + AppScript.slug(n)
@@ -174,10 +255,23 @@ public struct AppRecipe: Codable, Hashable, Identifiable, Sendable {
         }
         var unique: [String] = []
         for s in names where !unique.contains(s) { unique.append(s) }
+        let post = postInstall.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard post.utf8.count <= 16 * 1024 else { throw DeckError.invalid("Kurulum sonrası komut çok uzun.") }
+        let found = AppInput.detect(in: [c, post], secrets: unique, keeping: inputs).map { input in
+            var i = input
+            i.label = i.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            if i.label.isEmpty { i.label = AppInput.label(for: i.name) }
+            i.defaultValue = i.defaultValue.trimmingCharacters(in: .whitespaces)
+            return i
+        }
+        for i in found where !i.defaultValue.isEmpty { _ = try i.validate(i.defaultValue) }
+        // On the host network the app listens on {{ADDR}} itself, so ufw (not Docker) decides who reaches it.
+        var access = defaultAccess(port: port, http: http, ownLogin: ownLogin)
+        if port != nil, c.contains("network_mode: host") { access.append(.allowList) }
         return AppRecipe(id: slug, name: n, category: .custom, summary: summary.isEmpty ? "Kendi docker compose tarifin." : summary,
-                         symbol: "shippingbox", compose: c + "\n", port: port, http: http, ownLogin: ownLogin,
-                         secrets: unique,
-                         info: unique.map { "\($0): {{\($0)}}" }, isCustom: true)
+                         symbol: "shippingbox", compose: c + "\n", port: port, http: http, ownLogin: ownLogin, access: access,
+                         inputs: found, secrets: unique,
+                         info: unique.map { "\($0): {{\($0)}}" }, postInstall: post.isEmpty ? nil : post, isCustom: true)
     }
 }
 
@@ -260,6 +354,8 @@ public struct AppInstallReport: Sendable {
     public var manifest: AppManifest
     /// The app did not answer in time; it is installed, but check its logs.
     public var warnings: [String]
+    /// What a custom recipe's post-install command printed.
+    public var output: String?
 }
 
 /// Everything the user needs to reach an installed app.
@@ -594,7 +690,7 @@ public enum AppScript {
         guard let body = plan.recipe.postInstall else { return nil }
         var s = header + appVars(plan.recipe.id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n"
         for name in plan.secrets.keys.sorted() { s += "\(name)=\(q(plan.secrets[name]!))\n" }
-        s += "( \n" + fill(body, plan.vars) + "\n) 2>&1 | tail -n 20\necho \"RESULT done\"\n"
+        s += "OUT=$( ( \n" + fill(body, plan.vars) + "\n) 2>&1 ); RC=$?\nprintf '%s\\n' \"$OUT\" | tail -n 20\necho \"RESULT done rc=$RC\"\n"
         return s
     }
 
@@ -928,9 +1024,14 @@ extension DeckModel {
             if AppScript.result(waited) != "ready" {
                 warnings.append("Uygulama 90 saniyede yanıt vermedi; hâlâ açılıyor olabilir. Günlüklere bak:\n" + AppScript.details(waited))
             }
+            var output: String?
             if let script = AppScript.postInstall(plan) {
                 progress("Ilk ayarlar yapılıyor")
-                _ = try await appScript(id, script, timeout: 180)
+                let out = try await appScript(id, script, timeout: 180)
+                let printed = AppScript.details(out)
+                if AppScript.result(out) != "done rc=0" {
+                    warnings.append("Kurulum sonrası komut hata verdi" + (printed.isEmpty ? "." : ":\n" + printed))
+                } else if recipe.isCustom, !printed.isEmpty { output = printed }
             }
             if access == .domain, let domain, let port {
                 progress("\(domain) için HTTPS ayarlanıyor")
@@ -958,7 +1059,7 @@ extension DeckModel {
                 $0.apps = apps.sorted { $0.manifest.name < $1.manifest.name }
             }
             log(id, .info, "Uygulama kuruldu: \(recipe.name) (\(access.title)\(domain.map { ", \($0)" } ?? ""))")
-            return AppInstallReport(manifest: manifest, warnings: warnings)
+            return AppInstallReport(manifest: manifest, warnings: warnings, output: output)
         }
     }
 
