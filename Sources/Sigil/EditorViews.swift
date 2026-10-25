@@ -29,6 +29,7 @@ struct FileEditorWindow: View {
     @State private var loading = true
     @State private var saving = false
     @State private var error: String?
+    @State private var needsSudo = false
     @State private var status: String?
     @State private var confirmReload = false
     @State private var localDiagnostics: [Diagnostic] = []
@@ -58,6 +59,12 @@ struct FileEditorWindow: View {
                 if loading { ProgressView() }
             }
             if showProblems && !diagnostics.isEmpty { problems }
+            if needsSudo && !model.isSudoUnlocked(server.id) {
+                Divider()
+                // Unsaved edits are saved once sudo works; otherwise the file is read again.
+                SudoUnlockView(server: server) { needsSudo = false; if dirty { await save() } else { await load() } }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+            }
             Divider()
             footer
         }
@@ -252,7 +259,7 @@ struct FileEditorWindow: View {
             version = f.version
             readOnly = f.readOnlyReason
             previous = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription; needsSudo = error.needsSudo }
     }
 
     @discardableResult
@@ -274,6 +281,7 @@ struct FileEditorWindow: View {
             return true
         } catch {
             self.error = error.localizedDescription
+            needsSudo = error.needsSudo
             return false
         }
     }

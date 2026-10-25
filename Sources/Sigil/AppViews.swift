@@ -198,6 +198,7 @@ struct AppDetailSheet: View {
     @State private var working: String?
     @State private var error: String?
     @State private var note: String?
+    @State private var needsSudo = false
     @State private var confirmRemove = false
 
     private var app: InstalledApp? { model.server(server.id)?.apps?.first { $0.id == appID } }
@@ -229,6 +230,9 @@ struct AppDetailSheet: View {
             if let working { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(working).foregroundStyle(.secondary) } }
             if let note { Label(note, systemImage: "checkmark.circle.fill").foregroundStyle(Color.verdigris).font(.callout).fixedSize(horizontal: false, vertical: true) }
             if let error { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.cinnabar).font(.callout).fixedSize(horizontal: false, vertical: true) }
+            if needsSudo && !model.isSudoUnlocked(server.id) {
+                SudoUnlockView(server: server) { needsSudo = false; error = nil }
+            }
             HStack {
                 Spacer()
                 Button("Kapat") { dismiss() }.buttonStyle(InkButtonStyle()).keyboardShortcut(.defaultAction).disabled(working != nil)
@@ -279,7 +283,7 @@ struct AppDetailSheet: View {
         do {
             _ = try await model.appAction(server.id, app, action)
             note = "\(app.manifest.name) \(DeckModelText.action(action))."
-        } catch { self.error = error.localizedDescription }
+        } catch { fail(error) }
     }
 
     private func logs(_ app: InstalledApp) async {
@@ -289,7 +293,12 @@ struct AppDetailSheet: View {
         do {
             let text = try await model.appAction(server.id, app, .logs)
             openWindow(id: "preview", value: TextPreview(title: "\(server.alias) · \(app.manifest.name) · günlükler", text: text))
-        } catch { self.error = error.localizedDescription }
+        } catch { fail(error) }
+    }
+
+    private func fail(_ e: Error) {
+        error = e.localizedDescription
+        needsSudo = e.needsSudo
     }
 
     private func remove(_ app: InstalledApp) async {
@@ -302,7 +311,7 @@ struct AppDetailSheet: View {
             note = "Kaldırıldı. Dosyaları \(kept) içinde, verileri Docker volume’larında duruyor."
         } catch {
             working = nil
-            self.error = error.localizedDescription
+            fail(error)
         }
     }
 }

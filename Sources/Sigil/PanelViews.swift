@@ -95,6 +95,7 @@ private struct FileBrowser: View {
     @State private var loading = false
     @State private var status: String?
     @State private var error: String?
+    @State private var needsSudo = false
     @State private var renaming: RemoteFile?
     @State private var newName = ""
     @State private var deleting: RemoteFile?
@@ -108,6 +109,11 @@ private struct FileBrowser: View {
             toolbar
             Divider()
             table
+            if needsSudo && !model.isSudoUnlocked(server.id) {
+                Divider()
+                SudoUnlockView(server: server) { needsSudo = false; error = nil }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+            }
             Divider()
             statusBar
         }
@@ -280,7 +286,7 @@ private struct FileBrowser: View {
             status = "Dosya büyük (\(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file))); ilk 256 KB gösteriliyor."
         }
         do { openWindow(id: "preview", value: TextPreview(title: "\(server.alias) · \(f.path)", text: try await model.readFile(server.id, f.path))) }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = error.localizedDescription; needsSudo = error.needsSudo }
     }
 
     private func rename(_ f: RemoteFile) async {

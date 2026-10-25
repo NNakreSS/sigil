@@ -11,6 +11,8 @@ public enum DeckError: LocalizedError, Equatable {
     case busy
     case notFound
     case sudo(SudoFailure)
+    /// Needs root, and sudo asks for a password Sigil hasn't been given: the UI offers to enter it.
+    case needsSudo(String)
 
     public var errorDescription: String? {
         switch self {
@@ -24,8 +26,14 @@ public enum DeckError: LocalizedError, Equatable {
         case .busy: return "Bu sunucu için başka bir işlem sürüyor."
         case .notFound: return "Sunucu bulunamadı."
         case .sudo(let f): return f.message
+        case .needsSudo(let m): return m
         }
     }
+}
+
+extension Error {
+    /// Needs root through a sudo password Sigil hasn't been given yet.
+    public var needsSudo: Bool { if case .needsSudo = self as? DeckError { return true } else { return false } }
 }
 
 /// Turns raw ssh stderr into something a person can act on.

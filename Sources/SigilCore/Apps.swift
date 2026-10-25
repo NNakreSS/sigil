@@ -513,11 +513,17 @@ public enum AppScript {
 
     static func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
-    /// Sets S (sudo), BASE, D (docker) and C (compose). Exits with a RESULT line when Docker cannot be used.
-    static let header = #"""
+    /// Sets S (sudo), ADMIN and BASE: ROOT_BASE with admin rights, USER_BASE without.
+    static let admin = #"""
     S=""; ADMIN=0
     if [ "$(id -u)" -eq 0 ]; then ADMIN=1; elif sudo -n true 2>/dev/null; then S="sudo -n"; ADMIN=1; fi
-    if [ "$ADMIN" = 1 ]; then BASE=/opt/sigil/apps; else BASE="$HOME/sigil-apps"; fi
+    ROOT_BASE=/opt/sigil/apps; USER_BASE="$HOME/sigil-apps"
+    if [ "$ADMIN" = 1 ]; then BASE=$ROOT_BASE; else BASE=$USER_BASE; fi
+
+    """#
+
+    /// Sets D (docker) and C (compose). Exits with a RESULT line when Docker cannot be used.
+    static let docker = #"""
     D=""
     # A non-root admin keeps the apps in /opt/sigil/apps as root (.env is 0600), so compose must read them as root too,
     # even when the user is in the docker group.
@@ -530,9 +536,22 @@ public enum AppScript {
 
     """#
 
+    /// APP, P and DIR. An app stays where it was installed: in /opt/sigil/apps with admin rights, in ~/sigil-apps
+    /// without. When sudo asks for a password that Sigil hasn't been given, an app installed as admin is reported as
+    /// needing sudo (not as missing).
     static func appVars(_ id: String) -> String {
-        "APP=\(id); DIR=\"$BASE/$APP\"; P=sigil-$APP\n"
+        #"""
+        APP=\#(id); P=sigil-$APP; DIR="$BASE/$APP"
+        if [ ! -e "$DIR" ]; then
+          if [ "$ADMIN" = 1 ] && [ -e "$USER_BASE/$APP/sigil.json" ]; then DIR="$USER_BASE/$APP"
+          elif [ "$ADMIN" != 1 ] && [ -d "$ROOT_BASE/$APP" ]; then echo "RESULT needsudo"; exit 0; fi
+        fi
+
+        """#
     }
+
+    /// Admin rights, where the app is, then Docker: so a missing sudo is reported before Docker looks unusable.
+    static func prelude(_ id: String) -> String { admin + appVars(id) + docker }
 
     /// Read-only look at the server: admin rights, Docker, resources, listening ports, firewall and Sigil's apps.
     static let probe = #"""
@@ -619,7 +638,7 @@ public enum AppScript {
 
     /// Writes the compose file, `.env`, extra files; creates the shared `sigil` network. Refuses to overwrite an app.
     static func write(_ plan: Plan) -> String {
-        var s = header + appVars(plan.recipe.id)
+        var s = prelude(plan.recipe.id)
         s += #"[ -e "$DIR/sigil.json" ] && { echo "RESULT exists"; exit 0; }"# + "\n"
         s += #"$S mkdir -p "$DIR" || { echo "RESULT nowrite"; exit 0; }"# + "\n"
         s += file("docker-compose.yml", fill(plan.recipe.compose, plan.vars), secret: false)
@@ -648,16 +667,16 @@ public enum AppScript {
     }
 
     static func pull(_ id: String) -> String {
-        header + appVars(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }; run $C -p "$P" pull --ignore-buildable 2>/dev/null || run $C -p "$P" pull; echo "RESULT rc=$?""# + "\n"
+        prelude(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }; run $C -p "$P" pull --ignore-buildable 2>/dev/null || run $C -p "$P" pull; echo "RESULT rc=$?""# + "\n"
     }
 
     static func up(_ id: String) -> String {
-        header + appVars(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }; run $C -p "$P" up -d --remove-orphans; echo "RESULT rc=$?""# + "\n"
+        prelude(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }; run $C -p "$P" up -d --remove-orphans; echo "RESULT rc=$?""# + "\n"
     }
 
     /// Waits up to `seconds` for the containers to run and, for a web app, for the port to answer HTTP.
     static func wait(_ id: String, port: Int?, http: Bool, seconds: Int = 90) -> String {
-        var s = header + appVars(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n"
+        var s = prelude(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n"
         let check: String
         if let port, http {
             check = """
@@ -688,7 +707,7 @@ public enum AppScript {
 
     static func postInstall(_ plan: Plan) -> String? {
         guard let body = plan.recipe.postInstall else { return nil }
-        var s = header + appVars(plan.recipe.id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n"
+        var s = prelude(plan.recipe.id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n"
         for name in plan.secrets.keys.sorted() { s += "\(name)=\(q(plan.secrets[name]!))\n" }
         s += "OUT=$( ( \n" + fill(body, plan.vars) + "\n) 2>&1 ); RC=$?\nprintf '%s\\n' \"$OUT\" | tail -n 20\necho \"RESULT done rc=$RC\"\n"
         return s
@@ -714,7 +733,7 @@ public enum AppScript {
     /// Puts the app behind Caddy on `domain` (starting Caddy on 80/443 the first time). Without the app's own
     /// login, Caddy asks for the generated password; the hash is made inside the Caddy container from stdin.
     static func publish(_ id: String, domain: String, port: Int, password: String?) -> String {
-        var s = header + appVars(id)
+        var s = prelude(id)
         let manifest = AppManifest(id: "caddy", name: "Caddy (HTTPS)", symbol: "lock.rectangle.stack", port: nil, access: .domain,
                                    domain: nil, http: true, dir: "", custom: false)
         s += """
@@ -763,7 +782,7 @@ public enum AppScript {
 
     /// Opens a public port in an active ufw (Docker's own rules publish it anyway; this keeps ufw honest).
     static func openPort(_ id: String, port: Int) -> String {
-        header + appVars(id) + """
+        prelude(id) + """
         if [ "$ADMIN" = 1 ] && command -v ufw >/dev/null 2>&1 && $S ufw status 2>/dev/null | grep -qi 'Status: active'; then
           $S ufw allow \(port)/tcp comment "sigil-app:$APP" >/dev/null
         fi
@@ -778,7 +797,7 @@ public enum AppScript {
         let rules = addresses.map {
             "$S ufw allow from \(q($0)) to any port \(port) proto tcp comment \"sigil-app:$APP\" >/dev/null || { echo \"RESULT ufwfail\"; exit 0; }"
         }
-        return header + appVars(id) + """
+        return prelude(id) + """
         [ "$ADMIN" = 1 ] || { echo "RESULT noroot"; exit 0; }
         command -v ufw >/dev/null 2>&1 && $S ufw status 2>/dev/null | grep -qi 'Status: active' || { echo "RESULT noufw"; exit 0; }
         \(rules.joined(separator: "\n"))
@@ -798,7 +817,7 @@ public enum AppScript {
 
     /// Last step: the manifest marks the app as installed.
     static func finish(_ m: AppManifest) -> String {
-        header + appVars(m.id) + """
+        prelude(m.id) + """
         M=$(cat <<'SIGIL_MANIFEST'
         \(manifestJSON(m, dir: ""))
         SIGIL_MANIFEST
@@ -818,12 +837,12 @@ public enum AppScript {
         case .update: body = #"run $C -p "$P" pull && run $C -p "$P" up -d --remove-orphans"#
         case .logs: body = #"$C -p "$P" logs --tail 300 --timestamps 2>&1 | tail -n 600; true"#
         }
-        return header + appVars(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n" + body + "\necho \"RESULT rc=$?\"\n"
+        return prelude(id) + #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"# + "\n" + body + "\necho \"RESULT rc=$?\"\n"
     }
 
     /// Stops the app and moves its folder aside. Data volumes and files are kept, nothing is deleted.
     static func remove(_ id: String) -> String {
-        header + appVars(id) + #"""
+        prelude(id) + #"""
         [ -d "$DIR" ] || { echo "RESULT missing"; exit 0; }
         if [ "$APP" = caddy ] && [ -n "$(ls "$DIR/sites" 2>/dev/null)" ]; then echo "RESULT inuse"; exit 0; fi
         (cd "$DIR" && run $C -p "$P" down --remove-orphans) || { echo "RESULT downfail"; exit 0; }
@@ -900,6 +919,7 @@ public enum AppScript {
         case "hashfail": return .ssh("Caddy şifresi üretilemedi.")
         case "reloadfail": return .ssh("Caddy yeni ayarı kabul etmedi:\n" + details(out))
         case "missing": return .invalid("Uygulama klasörü sunucuda bulunamadı.")
+        case "needsudo": return .needsSudo("Bu uygulama yönetici olarak (/opt/sigil/apps içine) kurulmuş; yönetmek için root yetkisi gerekiyor. Sudo şifresini ver ve yeniden dene.")
         case "inuse": return .invalid("Caddy hâlâ alan adıyla yayınlanan uygulamalara hizmet veriyor; önce onları kaldır.")
         case "downfail": return .ssh("Uygulama durdurulamadı:\n" + details(out))
         case "noadmin": return .invalid("Docker kurmak için root ya da şifresiz sudo gerekiyor.")

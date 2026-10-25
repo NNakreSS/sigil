@@ -18,7 +18,7 @@ public struct RemoteFile: Identifiable, Hashable, Sendable {
 enum FileScript {
     /// GNU find's -printf where available (most Linux servers); otherwise stat per entry (BusyBox, BSD).
     static let list = """
-    read -r P; if [ "$P" = "~" ]; then cd; else cd -- "$P" 2>/dev/null || exit 4; fi; pwd; \
+    read -r P; if [ "$P" = "~" ]; then cd; else cd -- "$P" 2>/dev/null || { [ -d "$P" ] && exit 7; exit 4; }; fi; pwd; \
     if find . -maxdepth 0 -printf "" >/dev/null 2>&1; then \
       find . -mindepth 1 -maxdepth 1 -printf "%y\\t%s\\t%T@\\t%M\\t%u\\t%f\\n" 2>/dev/null | head -n 5000; \
     else n=0; for f in .* *; do \
@@ -27,10 +27,17 @@ enum FileScript {
       S=$(stat -c "%s\\t%Y\\t%A\\t%U" -- "$f" 2>/dev/null || stat -f "%z%t%m%t%Sp%t%Su" -- "$f" 2>/dev/null) || continue; \
       printf "%s\\t%s\\t%s\\n" "$t" "$S" "$f"; done; fi
     """
-    static let read = #"read -r P; [ -f "$P" ] || exit 4; head -c 262144 -- "$P""#
+    /// Sets R to `sudo -n` when the file needs root to `test` (-r, -w). Exits 7 when it needs root and sudo can't be
+    /// used (a file the user can't read, or behind a folder the user can't enter), 4 when there is no such file.
+    /// One line with no single quotes: it goes into `sh -c '…'` and may be joined into one line.
+    static func access(_ test: String) -> String {
+        #"R=""; if ! [ -f "$P" ] || ! [ \#(test) "$P" ]; then if sudo -n test -f "$P" 2>/dev/null; then R="sudo -n"; elif [ -f "$P" ] || ! [ -x "$(dirname -- "$P")" ]; then exit 7; else exit 4; fi; fi;"#
+    }
+
+    static let read = #"read -r P; "# + access("-r") + #" $R head -c 262144 -- "$P""#
     /// For editing: "<mtime> <size>" on the first line, then up to 512 KB of the file.
     static let editRead = #"""
-    R=""; read -r P; [ -f "$P" ] || exit 4; [ -r "$P" ] || { sudo -n true 2>/dev/null && R="sudo -n" || exit 7; }
+    read -r P; \#(access("-r"))
     M=$($R stat -L -c '%Y %s' -- "$P" 2>/dev/null || $R stat -L -f '%m %z' -- "$P" 2>/dev/null) || exit 4
     echo "$M"; $R head -c 524288 -- "$P"
     """#
@@ -39,8 +46,7 @@ enum FileScript {
     /// file changed on the server since it was read (exit 8).
     static let write = #"""
     read -r P; read -r E1 E2 N
-    [ -f "$P" ] || exit 4
-    R=""; [ -w "$P" ] || { sudo -n true 2>/dev/null && R="sudo -n" || exit 7; }
+    \#(access("-w"))
     M=$($R stat -L -c '%Y %s' -- "$P" 2>/dev/null || $R stat -L -f '%m %z' -- "$P" 2>/dev/null)
     [ "$M" = "$E1 $E2" ] || exit 8
     T=$(mktemp) || exit 9
@@ -85,6 +91,7 @@ extension DeckModel {
     public func listDirectory(_ id: UUID, _ path: String) async throws -> (path: String, files: [RemoteFile]) {
         let r = try await runShared(id, RemoteService.wrap(FileScript.list), stdin: try FileScript.checkPath(path) + "\n")
         if r.exitCode == 4 { throw DeckError.invalid("Klasör açılamadı: \(path)") }
+        if r.exitCode == 7 { throw DeckError.invalid("Bu klasöre “\(server(id)?.user ?? "")” kullanıcısıyla girilemiyor (izin yok): \(path)") }
         guard r.succeeded else { throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut)) }
         let lines = r.stdout.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
         let dir = lines.first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? path
@@ -95,9 +102,12 @@ extension DeckModel {
     public func readFile(_ id: UUID, _ path: String) async throws -> String {
         let r = try await runShared(id, RemoteService.wrap(FileScript.read), stdin: try FileScript.checkPath(path) + "\n")
         if r.exitCode == 4 { throw DeckError.invalid("Dosya okunamadı.") }
+        if r.exitCode == 7 { throw Self.fileNeedsSudo }
         guard r.succeeded else { throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut)) }
         return r.stdout
     }
+
+    static let fileNeedsSudo = DeckError.needsSudo("Bu dosya için root yetkisi gerekiyor. Sudo şifresini ver ve yeniden dene.")
 
     /// Largest file the editor opens.
     public static let editableLimit = 524_288
@@ -116,7 +126,7 @@ extension DeckModel {
         switch r.exitCode {
         case 0: break
         case 4: throw DeckError.invalid("Dosya okunamadı.")
-        case 7: throw DeckError.invalid("Bu dosyayı okuma yetkin yok (şifresiz sudo da yok).")
+        case 7: throw Self.fileNeedsSudo
         default: throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut))
         }
         let parts = r.stdout.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
@@ -139,7 +149,7 @@ extension DeckModel {
         switch r.exitCode {
         case 0: break
         case 4: throw DeckError.invalid("Dosya sunucuda artık yok.")
-        case 7: throw DeckError.invalid("Bu dosyaya yazma yetkin yok (şifresiz sudo da yok).")
+        case 7: throw Self.fileNeedsSudo
         case 8: throw DeckError.invalid("Dosya sen açtıktan sonra sunucuda değişmiş; üzerine yazılmadı. Yeniden yükleyip değişikliklerini tekrar yap.")
         case 9: throw DeckError.ssh("Dosya yazılamadı (disk dolu ya da bağlantı koptu); sunucudaki dosya değişmedi.")
         default: throw DeckError.ssh(SSHErrorText.friendly(r.stderr, exitCode: r.exitCode, timedOut: r.timedOut))

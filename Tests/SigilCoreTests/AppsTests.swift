@@ -215,7 +215,7 @@ final class AppsTests: XCTestCase {
             AppScript.Plan(recipe: try AppRecipe.custom(name: "x", compose: "services:", port: nil, http: false, ownLogin: true, secrets: "",
                                                         postInstall: "echo merhaba {{WHO}}; exit 3"),
                            access: .tunnel, port: nil, domain: nil, secrets: [:], vars: ["WHO": "dunya"]))!
-            .replacingOccurrences(of: AppScript.header, with: "")
+            .replacingOccurrences(of: AppScript.admin, with: "").replacingOccurrences(of: AppScript.docker, with: "")
             .replacingOccurrences(of: #"cd "$DIR" || { echo "RESULT missing"; exit 0; }"#, with: "")
         )
         XCTAssertEqual(AppScript.result(out.stdout), "done rc=3", out.stdout)
@@ -227,6 +227,71 @@ final class AppsTests: XCTestCase {
                              "a default must be valid")
         XCTAssertEqual(try AppRecipe.custom(name: "x", compose: "services:\n  a:\n    ports: [\"{{BIND}}{{PORT}}:80\"]", port: 80, http: true,
                                             ownLogin: true, secrets: "").inputs, nil, "nothing to ask")
+    }
+
+    /// An app installed with admin rights, managed while sudo is locked, needs sudo: it is not "missing".
+    func testAppIsFoundWhereItWasInstalled() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sigil-base-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let root = dir.appendingPathComponent("root"), user = dir.appendingPathComponent("user")
+        func where_(admin: Bool) async throws -> String {
+            let base = admin ? root : user
+            let s = "ADMIN=\(admin ? 1 : 0); ROOT_BASE='\(root.path)'; USER_BASE='\(user.path)'; BASE='\(base.path)'\n"
+                + AppScript.appVars("demo") + "echo \"DIR=$DIR\"\n"
+            return try await Shell.run("/bin/sh", ["-s"], stdin: s).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let fm = FileManager.default
+        var got = try await where_(admin: false)
+        XCTAssertEqual(got, "DIR=\(user.path)/demo", "a new install without admin rights")
+
+        try fm.createDirectory(at: root.appendingPathComponent("demo"), withIntermediateDirectories: true)
+        got = try await where_(admin: false)
+        XCTAssertEqual(AppScript.result(got), "needsudo", got)
+        XCTAssertTrue(AppScript.failure("needsudo", got).needsSudo)
+        got = try await where_(admin: true)
+        XCTAssertEqual(got, "DIR=\(root.path)/demo")
+
+        try fm.removeItem(at: root.appendingPathComponent("demo"))
+        try fm.createDirectory(at: user.appendingPathComponent("demo"), withIntermediateDirectories: true)
+        try "{}".write(to: user.appendingPathComponent("demo/sigil.json"), atomically: true, encoding: .utf8)
+        got = try await where_(admin: true)
+        XCTAssertEqual(got, "DIR=\(user.path)/demo", "installed before sudo was given: still managed where it is")
+
+        // Admin rights and the app's place are settled before Docker is looked at.
+        let script = AppScript.remove("demo")
+        let at = { (part: String) in script.range(of: part)!.lowerBound }
+        XCTAssertLessThan(at("RESULT needsudo"), at("RESULT nodocker"))
+    }
+
+    /// A file behind a folder the user can't enter needs root; a file that isn't there is missing.
+    func testFileAccessNeedsRootOrIsMissing() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sigil-access-\(UUID().uuidString)")
+        let locked = dir.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try "gizli\n".write(to: locked.appendingPathComponent("a.conf"), atomically: true, encoding: .utf8)
+        try "açık\n".write(to: dir.appendingPathComponent("b.conf"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        // This Mac's sudo must not answer: the server's would only with a password Sigil was given.
+        func run(_ script: String, _ path: String) async throws -> ShellResult {
+            try await Shell.run("/bin/sh", ["-c", "sudo() { return 1; }; " + script], stdin: path + "\n")
+        }
+        for script in [FileScript.editRead, FileScript.read] {
+            var r = try await run(script, locked.appendingPathComponent("a.conf").path)
+            XCTAssertEqual(r.exitCode, 7, "needs root, not missing")
+            r = try await run(script, dir.appendingPathComponent("nope.conf").path)
+            XCTAssertEqual(r.exitCode, 4)
+            r = try await run(script, dir.appendingPathComponent("b.conf").path)
+            XCTAssertEqual(r.exitCode, 0)
+            XCTAssertTrue(r.stdout.hasSuffix("açık\n"), r.stdout)
+        }
+        let w = try await run(FileScript.write, locked.appendingPathComponent("a.conf").path + "\n1 1 1\nx")
+        XCTAssertEqual(w.exitCode, 7)
+        let list = try await Shell.run("/bin/sh", ["-c", FileScript.list], stdin: locked.path + "\n")
+        XCTAssertEqual(list.exitCode, 7, "a folder that can't be entered is not missing")
     }
 
     func testInputKinds() throws {

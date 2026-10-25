@@ -179,6 +179,17 @@ final class SudoTests: XCTestCase {
         XCTAssertEqual(AppScript.result(waited), "ready", waited)
         let metrics = try await run("sleep 2; curl -s http://127.0.0.1:9198/metrics | grep -c '^node_network_receive_bytes_total'")
         XCTAssertGreaterThan(Int(metrics.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0, 0, metrics)
+        // The reported case: without the password the app installed as root needs sudo; it is not "missing".
+        for script in [AppScript.remove(id), AppScript.action(id, .logs)] {
+            let locked = try await remote.execute(user, login, "sh -s", stdin: script)
+            XCTAssertEqual(AppScript.result(locked.stdout), "needsudo", locked.stdout + locked.stderr)
+        }
+        _ = try await Shell.run("/usr/local/bin/docker", ["exec", "sigil-test-server", "sh", "-c",
+                                                          "mkdir -p /root/sigil-e2e && echo gizli > /root/sigil-e2e/a.conf"])
+        let rootFile = try await remote.execute(user, login, FileScript.command(FileScript.editRead), stdin: "/root/sigil-e2e/a.conf\n")
+        XCTAssertEqual(rootFile.exitCode, 7, "behind /root: needs root, not missing")
+        let opened = try await remote.execute(t, login, FileScript.command(FileScript.editRead), stdin: "/root/sigil-e2e/a.conf\n")
+        XCTAssertTrue(opened.stdout.hasSuffix("gizli\n"), opened.stdout + opened.stderr)
         let removed = try await run(AppScript.remove(id))
         XCTAssertTrue(AppScript.result(removed).hasPrefix("removed"), removed)
         let after = try await run("sudo -n ufw status")
