@@ -10,6 +10,8 @@ struct ContentView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var search = ""
     @State private var collapsed: Set<String> = []
+    /// The group a dragged server is over ("" = no group), for the highlight.
+    @State private var dropTarget: String?
 
     var body: some View {
         @Bindable var router = router
@@ -143,18 +145,34 @@ struct ContentView: View {
                     ForEach(grouped[name] ?? []) { row($0) }
                 } header: {
                     HStack(spacing: 6) {
-                        Label(name, systemImage: "folder")
+                        Label(name, systemImage: dropTarget == name ? "folder.fill" : "folder")
                         let count = (grouped[name] ?? []).filter { !ServerAttention.reasons($0).isEmpty }.count
                         if count > 0 && collapsed.contains(name) {
                             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.cinnabar)
                                 .help("Bu grupta dikkat isteyen \(count) sunucu var")
                         }
+                        Spacer(minLength: 0)
                     }
+                    .dropTarget(for: name, highlight: $dropTarget, move: move)
                 }
             }
             if let ungrouped = grouped[""], !ungrouped.isEmpty {
-                Section(groupNames.isEmpty ? "Sunucular" : "Grupsuz") {
+                Section {
                     ForEach(ungrouped) { row($0) }
+                } header: {
+                    HStack {
+                        Text(groupNames.isEmpty ? "Sunucular" : "Grupsuz")
+                        Spacer(minLength: 0)
+                    }
+                    .dropTarget(for: "", highlight: $dropTarget, move: move)
+                }
+            } else if !groupNames.isEmpty {
+                // Every server is in a group: somewhere to drop one to take it out.
+                Section("Grupsuz") {
+                    Label("Gruptan çıkarmak için buraya bırak", systemImage: "tray.and.arrow.down")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .dropTarget(for: "", highlight: $dropTarget, move: move)
                 }
             }
         }
@@ -253,14 +271,60 @@ struct ContentView: View {
     private func row(_ s: Server) -> some View {
         ServerRow(server: s, busy: model.busy[s.id])
             .tag(s.id)
+            .draggable(ServerDrag.payload(s.id)) {
+                Label(s.alias, systemImage: "server.rack").padding(6).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            }
+            // Dropped on a server: into that server's group.
+            .dropTarget(for: s.group ?? "", highlight: $dropTarget, move: move)
             .contextMenu {
                 Button("Bağlan") { router.connect(s) }
                 Button("Bağlantıyı Test Et") { Task { await model.checkStatus(s.id, interactive: true) } }
                 Button("Sunucuyu Güncelle…") { router.maintenance = .init(serverID: s.id, kind: .update) }
                 Button("Yeniden Başlat…") { router.maintenance = .init(serverID: s.id, kind: .reboot) }
                 Divider()
+                if !model.groups.isEmpty {
+                    Menu("Gruba taşı") {
+                        ForEach(model.groups.filter { $0 != s.group }, id: \.self) { g in Button(g) { model.setGroup(s.id, g) } }
+                        if s.group != nil {
+                            Divider()
+                            Button("Grupsuz") { model.setGroup(s.id, nil) }
+                        }
+                    }
+                }
                 Button("“ssh \(s.alias)” Kopyala") { Links.copy("ssh \(s.alias)") }
             }
+    }
+
+    /// Moves the dragged servers into `group` ("" = no group).
+    private func move(_ payloads: [String], to group: String) -> Bool {
+        let ids = payloads.compactMap(ServerDrag.id).filter { model.server($0) != nil }
+        guard !ids.isEmpty else { return false }
+        for id in ids where (model.server(id)?.group ?? "") != group { model.setGroup(id, group.isEmpty ? nil : group) }
+        if !group.isEmpty { collapsed.remove(group) }
+        Haptics.tap()
+        return true
+    }
+}
+
+/// A server dragged in the sidebar travels as text with a prefix, so text dragged in from elsewhere is ignored.
+enum ServerDrag {
+    static let prefix = "sigil-server:"
+    static func payload(_ id: UUID) -> String { prefix + id.uuidString }
+    static func id(_ payload: String) -> UUID? {
+        payload.hasPrefix(prefix) ? UUID(uuidString: String(payload.dropFirst(prefix.count))) : nil
+    }
+}
+
+private extension View {
+    /// Accepts dragged servers for `group`, highlighting while one is over it.
+    func dropTarget(for group: String, highlight: Binding<String?>, move: @escaping ([String], String) -> Bool) -> some View {
+        dropDestination(for: String.self) { items, _ in
+            highlight.wrappedValue = nil
+            return move(items, group)
+        } isTargeted: { over in
+            if over { highlight.wrappedValue = group } else if highlight.wrappedValue == group { highlight.wrappedValue = nil }
+        }
+        .listRowBackground(highlight.wrappedValue == group ? Color.accentInk.opacity(0.12) : nil)
     }
 }
 

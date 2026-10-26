@@ -22,6 +22,8 @@ struct AddServerSheet: View {
     @State private var interval = 30
     @State private var keyStore: KeyStoreKind = .keychain
     @State private var jumpID: UUID?
+    @State private var group = ""
+    @State private var environment: ServerEnvironment?
 
     @State private var phase: Phase = .form
     @State private var scanned: [HostKey] = []
@@ -64,7 +66,7 @@ struct AddServerSheet: View {
             .padding(26)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .frame(width: 760, height: 520)
+        .frame(width: 760, height: 590)
         .background(Color.parchment)
         .animation(Motion.stamp, value: phase)
         .interactiveDismissDisabled(phase == .working || phase == .scanning || phase == .done)
@@ -200,6 +202,32 @@ struct AddServerSheet: View {
                 GridRow {
                     label("Kullanıcı")
                     TextField("", text: $user).focused($focus, equals: .user)
+                }
+                GridRow {
+                    label("Grup")
+                    HStack {
+                        TextField("", text: $group, prompt: Text("Grupsuz"))
+                        if !model.groups.isEmpty {
+                            Menu {
+                                ForEach(model.groups, id: \.self) { g in Button(g) { group = g } }
+                                Divider()
+                                Button("Grupsuz") { group = "" }
+                            } label: {
+                                Image(systemName: "folder")
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .help("Var olan bir grup seç")
+                        }
+                    }
+                }
+                GridRow {
+                    label("Ortam")
+                    Picker("", selection: $environment) {
+                        Text("Belirtilmemiş").tag(ServerEnvironment?.none)
+                        ForEach(ServerEnvironment.allCases) { Text($0.title).tag(ServerEnvironment?.some($0)) }
+                    }
+                    .labelsHidden().frame(maxWidth: 220, alignment: .leading)
                 }
                 GridRow {
                     label("Şifre")
@@ -361,6 +389,8 @@ struct AddServerSheet: View {
                 steps.append(step)
             }
             password = ""
+            model.setGroup(server.id, group)
+            if let environment { model.setEnvironment(server.id, environment) }
             added = server
             phase = .done
             Haptics.success()
